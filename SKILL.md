@@ -152,7 +152,7 @@ Before extraction, the script checks optional Python packages needed for the det
 Use `--install-missing yes` to install missing Python packages without prompting, `--install-missing no` or `--no-install-missing` to always use fallbacks, or `BOOK_SKILL_INSTALL_MISSING=yes|no|ask` to set the behavior by environment variable. Non-interactive sessions default to fallback unless install mode is explicitly `yes`.
 
 - PDF `--mode technical` → uses Docling (layout-aware, preserves tables and code blocks as markdown)
-- PDF `--mode text` → uses pdftotext → PyPDF2 → pdfminer fallback chain (fast, plain text)
+- PDF `--mode text` → uses pdftotext → pypdf → pdfminer fallback chain (fast, plain text)
 - EPUB → uses ebooklib + BeautifulSoup4, then stdlib ZIP/HTML fallback
 - DOCX → uses python-docx, then stdlib ZIP/XML fallback
 - TXT/Markdown/reStructuredText/AsciiDoc → reads directly as text

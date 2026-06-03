@@ -95,7 +95,7 @@ The extractor tries tools in order per format and uses the first available. If n
 | Book type | Tool | Install | Speed |
 |-----------|------|---------|-------|
 | Text-heavy (prose, few tables) | `pdftotext` (poppler) | `sudo apt install poppler-utils` | ⚡ instant |
-| Text-heavy fallback | `PyPDF2` | `pip3 install PyPDF2` | ⚡ instant |
+| Text-heavy fallback | `pypdf` | `pip3 install pypdf` | ⚡ instant |
 | Text-heavy fallback | `pdfminer.six` | `pip3 install pdfminer.six` | ⚡ instant |
 | **Technical (code, tables, formulas)** | **`docling`** | `pip3 install docling` | ~1.5s/page |
 
@@ -129,7 +129,7 @@ PDF or EPUB
 Step 1.5 — "Technical or text-heavy book?"
      │
      ├── technical → Docling  (tables + code blocks as markdown, ~1.5s/page)
-     └── text      → pdftotext → PyPDF2 → pdfminer  (instant)
+     └── text      → pdftotext → pypdf → pdfminer  (instant)
      │
      ▼
 scripts/extract.py --mode <technical|text>
@@ -250,9 +250,23 @@ Then in any Claude Code session:
 book-to-skill/
 ├── SKILL.md              # Skill definition + step-by-step instructions
 ├── scripts/
-│   └── extract.py        # PDF + EPUB extraction (pdftotext / PyPDF2 / pdfminer / ebooklib / zipfile)
+│   └── extract.py        # PDF + EPUB extraction (pdftotext / pypdf / pdfminer / ebooklib / zipfile)
+├── tests/
+│   └── test_extract.py   # Synthetic-fixture tests for the extractor
 └── README.md             # This file
 ```
+
+---
+
+## 🧪 Tests
+
+```bash
+python3 -m pytest tests/ -q
+```
+
+Fixtures (EPUB/DOCX/HTML/RTF) are built synthetically in-process — no binary
+assets in the repo. Run `scripts/extract.py --debug <file>` to see which
+extractor was used and why a fallback kicked in.
 
 ---
 
