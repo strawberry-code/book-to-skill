@@ -43,6 +43,13 @@ def detect_structure(text: str) -> dict[str, object]:
     Scans the whole text (cheap line iteration) so chapters past any fixed prefix
     are not dropped; the ToC keyword is matched on its own line within the front
     matter to avoid false positives like "the contents of this book are...".
+
+    Args:
+        text: The full extracted document text.
+
+    Returns:
+        A dict with ``chapters_detected`` (int), ``chapter_headings_sample``
+        (list of up to 10 headings), and ``has_toc`` (bool).
     """
     chapters_found: list[str] = []
     for raw_line in text.splitlines():

@@ -44,6 +44,14 @@ class ExtractionError(Exception):
     The pure core raises this; the CLI shell is the single place that turns it
     into a stderr message plus ``exit(1)``. This keeps ``sys.exit`` out of the
     extraction logic so it stays unit-testable.
+
+    Args:
+        message: Human-facing description of what failed.
+        hint: Optional remediation hint (e.g. which package to install).
+
+    Attributes:
+        message: The failure description.
+        hint: The remediation hint, if any.
     """
 
     def __init__(self, message: str, hint: str | None = None) -> None:
@@ -59,11 +67,20 @@ _DEBUG = False
 
 
 def set_debug(enabled: bool) -> None:
+    """Enable or disable process-global debug logging.
+
+    Args:
+        enabled: ``True`` to print debug lines, ``False`` to silence them.
+    """
     global _DEBUG
     _DEBUG = enabled
 
 
 def log_debug(message: str) -> None:
-    """Surface a swallowed-error cause on stderr, only when debugging is on."""
+    """Surface a swallowed-error cause on stderr, only when debugging is on.
+
+    Args:
+        message: The diagnostic line to print (prefixed with ``[debug]``).
+    """
     if _DEBUG:
         print(f"[debug] {message}", file=sys.stderr)

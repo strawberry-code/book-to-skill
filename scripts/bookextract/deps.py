@@ -65,10 +65,28 @@ class DepOffer:
 
 
 def python_module_available(module_name: str) -> bool:
+    """Return whether ``module_name`` can be imported, without importing it.
+
+    Args:
+        module_name: The importable module name to probe.
+
+    Returns:
+        ``True`` if a spec is found, ``False`` otherwise.
+    """
     return importlib.util.find_spec(module_name) is not None
 
 
 def missing_python_packages(module_names: tuple[str, ...]) -> list[str]:
+    """Return the pip names of the modules that are not importable.
+
+    Args:
+        module_names: Importable module names to probe (keys of
+            :data:`PYTHON_DEPENDENCIES`).
+
+    Returns:
+        The pip distribution names for those modules that are missing, in input
+        order; empty if all are present.
+    """
     return [PYTHON_DEPENDENCIES[m] for m in module_names if not python_module_available(m)]
 
 
@@ -80,6 +98,15 @@ def normalize_install_mode(
 
     Precedence: ``--no-install-missing`` wins, then ``--install-missing <value>``,
     then the ``BOOK_SKILL_INSTALL_MISSING`` env var, defaulting to ``'ask'``.
+
+    Args:
+        install_missing: The ``--install-missing`` value, or ``None`` if the flag
+            was absent. Accepts truthy/falsy spellings (``yes``, ``y``, ``no``,
+            ``fallback``, …) for backward compatibility.
+        no_install_missing: ``True`` when ``--no-install-missing`` was passed.
+
+    Returns:
+        The normalized mode: ``'yes'``, ``'no'``, or ``'ask'``.
     """
     mode = os.environ.get("BOOK_SKILL_INSTALL_MISSING", "ask").lower()
     if no_install_missing:
@@ -94,7 +121,17 @@ def normalize_install_mode(
 
 
 def decide_install(mode: str, *, is_tty: bool, has_missing: bool) -> InstallDecision:
-    """Pure matrix: (mode, tty, has_missing) -> decision. No I/O."""
+    """Map ``(mode, tty, has_missing)`` to an install decision. Pure: no I/O.
+
+    Args:
+        mode: Normalized install mode (``'yes'``, ``'no'``, or ``'ask'``).
+        is_tty: Whether stdin is interactive (only then can we prompt).
+        has_missing: Whether any package for the feature is actually missing.
+
+    Returns:
+        :attr:`InstallDecision.INSTALL`, :attr:`InstallDecision.ASK_USER`, or
+        :attr:`InstallDecision.USE_FALLBACK`.
+    """
     if not has_missing:
         return InstallDecision.USE_FALLBACK
     if mode == "yes":
@@ -117,6 +154,17 @@ def _warn_if_not_venv() -> None:
 
 
 def install_python_packages(packages: list[str]) -> bool:
+    """Install packages with pip into the current interpreter.
+
+    Warns when not running inside a virtualenv, since pip would then mutate the
+    global environment.
+
+    Args:
+        packages: pip distribution names to install.
+
+    Returns:
+        ``True`` on success (or nothing to do), ``False`` if pip failed.
+    """
     if not packages:
         return True
     print(f"Installing missing Python package(s): {', '.join(packages)}")
@@ -141,10 +189,15 @@ def _user_accepts_install() -> bool:
 
 
 def run_install_flow(offer: DepOffer, install_mode: str) -> None:
-    """Side-effecting: announce one dep offer and honor the install decision.
+    """Announce one dependency offer and honor the install decision.
 
-    ``install_mode`` is the yes/no/ask install policy (not the PDF extraction
-    mode). Callers are expected to have already filtered by ``offer.applies``.
+    Side-effecting (prints, may prompt, may shell out to pip). Callers are
+    expected to have already filtered by :attr:`DepOffer.applies`.
+
+    Args:
+        offer: The dependency offer to act on.
+        install_mode: The yes/no/ask install policy (not the PDF extraction
+            mode).
     """
     packages = missing_python_packages(offer.module_names)
     if not packages:

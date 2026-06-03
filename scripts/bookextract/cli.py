@@ -62,11 +62,23 @@ class _Job:
 
 
 def resolve_workdir() -> Path:
+    """Return the output directory, honoring ``BOOK_SKILL_WORKDIR``.
+
+    Returns:
+        The configured workdir, or a ``book_skill_work`` folder under the system
+        temp directory by default.
+    """
     default = str(Path(tempfile.gettempdir()) / "book_skill_work")
     return Path(os.environ.get("BOOK_SKILL_WORKDIR", default))
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
+    """Construct the CLI argument parser.
+
+    Returns:
+        A parser accepting the input path and the ``--mode`` / ``--install-missing``
+        / ``--no-install-missing`` / ``--debug`` options.
+    """
     parser = argparse.ArgumentParser(
         prog="extract.py",
         description="Extract text from a document for book-to-skill processing.",
@@ -84,6 +96,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 
 def _add_install_args(parser: argparse.ArgumentParser) -> None:
+    """Register the dependency-install and debug options on ``parser``."""
     parser.add_argument(
         "--install-missing",
         nargs="?",
@@ -107,6 +120,7 @@ def _add_install_args(parser: argparse.ArgumentParser) -> None:
 
 
 def _die(message: str, hint: str | None = None) -> NoReturn:
+    """Print an error (and optional hint) to stderr and exit with status 1."""
     print(f"ERROR: {message}", file=sys.stderr)
     if hint:
         print(hint, file=sys.stderr)
@@ -114,6 +128,7 @@ def _die(message: str, hint: str | None = None) -> NoReturn:
 
 
 def _coerce_mode(raw: str) -> ExtractionMode:
+    """Normalize a raw ``--mode`` value, defaulting unknown values to ``text``."""
     mode = raw.lower()
     return mode if mode in _VALID_MODES else _DEFAULT_MODE  # type: ignore[return-value]
 
@@ -129,6 +144,7 @@ def _resolve_format(input_path: str) -> tuple[str, str]:
 
 
 def _offer_dependencies(spec: FormatSpec, mode: ExtractionMode, install_mode: str) -> None:
+    """Run the applicable dependency offers for ``spec`` under the given modes."""
     ctx = OfferContext(mode=mode, has_pdftotext=shutil.which("pdftotext") is not None)
     for offer in spec.deps:
         if offer.applies(ctx):
@@ -136,6 +152,7 @@ def _offer_dependencies(spec: FormatSpec, mode: ExtractionMode, install_mode: st
 
 
 def _guard_calibre(spec: FormatSpec) -> None:
+    """Exit early with guidance if a Calibre format needs ``ebook-convert``."""
     if spec.name == "ebook" and shutil.which("ebook-convert") is None:
         _die(
             "MOBI/AZW/AZW3 extraction requires Calibre's ebook-convert command. "
@@ -144,19 +161,38 @@ def _guard_calibre(spec: FormatSpec) -> None:
 
 
 def _render_attempts(attempts: tuple[Attempt, ...]) -> None:
+    """Print the per-extractor "Trying X… OK" narration."""
     for attempt in attempts:
         print(f"Trying {attempt.name}... {_OUTCOME_LABEL[attempt.outcome]}")
 
 
 def _recorded_mode(spec: FormatSpec, requested: ExtractionMode, method: str) -> str:
-    # A technical PDF that fell back to the text chain is recorded as 'text', so
-    # the metadata reflects the path actually taken (not the requested mode).
+    """Return the mode to record in metadata, reflecting the path actually taken.
+
+    A technical PDF that fell back to the text chain is recorded as ``text`` so
+    the metadata mirrors what really happened, not what was requested.
+
+    Args:
+        spec: The resolved format.
+        requested: The mode the user asked for.
+        method: The winning extractor's name.
+
+    Returns:
+        ``"technical"`` only when Docling actually produced the text, else
+        ``requested`` (which is ``"text"`` for the PDF fallback case).
+    """
     if spec.name == "pdf" and requested == "technical" and method != "docling":
         return "text"
     return requested
 
 
 def _finish(job: _Job, result: ChainResult) -> None:
+    """Write outputs and print the summary for a successful extraction.
+
+    Args:
+        job: The resolved per-run context.
+        result: The successful chain result (text and method are non-``None``).
+    """
     assert result.text is not None and result.method is not None  # guaranteed by caller
     output_text = job.workdir / "full_text.txt"
     output_meta = job.workdir / "metadata.json"
@@ -181,6 +217,7 @@ def _finish(job: _Job, result: ChainResult) -> None:
 
 
 def _print_summary(metadata: dict[str, object], job: _Job) -> None:
+    """Print the human-facing "Extraction complete" summary block."""
     count_key = job.spec.count_key
     label = _COUNT_LABEL.get(count_key, count_key)
     tokens = cast(int, metadata["estimated_tokens"])
@@ -201,6 +238,13 @@ def _print_summary(metadata: dict[str, object], job: _Job) -> None:
 
 
 def main() -> None:
+    """CLI entrypoint: parse args, extract, write outputs, or exit with an error.
+
+    Resolves the input to a :class:`~bookextract.formats.FormatSpec`, offers any
+    missing optional dependencies, runs the extractor chain, and writes
+    ``full_text.txt`` + ``metadata.json``. Exits non-zero on unsupported formats,
+    missing files, or a fully failed extraction chain.
+    """
     args = build_arg_parser().parse_args()
     if args.debug:
         set_debug(True)

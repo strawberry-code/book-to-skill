@@ -36,7 +36,19 @@ class ChainResult:
 
 
 def run_chain(spec: FormatSpec, path: str, mode: ExtractionMode) -> ChainResult:
-    """Try each in-mode extractor in order; return the first that yields text."""
+    """Try each in-mode extractor in order; return the first that yields text.
+
+    Args:
+        spec: The format whose extractor chain to run.
+        path: Filesystem path to the document.
+        mode: Active extraction mode; extractors not serving this mode are
+            skipped entirely (e.g. Docling outside ``technical``).
+
+    Returns:
+        A :class:`ChainResult` with the winning text and method, plus an
+        :class:`Attempt` record per strategy tried. ``text``/``method`` are
+        ``None`` when every strategy was unavailable or produced no text.
+    """
     attempts: list[Attempt] = []
     for extractor in spec.extractors:
         if mode not in extractor.modes:

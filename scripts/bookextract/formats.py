@@ -31,7 +31,14 @@ def _no_pages(_path: str) -> int:
 
 
 def count_pages(path: str) -> int:
-    """PDF page count via pdfinfo, falling back to a pypdf reader length."""
+    """Count PDF pages via pdfinfo, falling back to a pypdf reader length.
+
+    Args:
+        path: Filesystem path to the PDF.
+
+    Returns:
+        The page count, or ``0`` if neither method is available or both fail.
+    """
     pages = _count_pages_pdfinfo(path)
     if pages is not None:
         return pages
@@ -67,7 +74,14 @@ def _count_pages_pdfinfo(path: str) -> int | None:
 
 
 def count_epub_chapters(path: str) -> int:
-    """Approximate chapter count = number of spine itemrefs in the OPF."""
+    """Approximate chapter count as the number of spine itemrefs in the OPF.
+
+    Args:
+        path: Filesystem path to the EPUB.
+
+    Returns:
+        The ``<itemref>`` count, or ``0`` if the OPF is missing/unreadable.
+    """
     import re
 
     try:
@@ -207,22 +221,36 @@ CALIBRE_EXTENSIONS: Final[frozenset[str]] = _CALIBRE_EXTENSIONS
 
 
 def spec_for_extension(ext: str) -> FormatSpec | None:
+    """Look up the :class:`FormatSpec` for a file extension.
+
+    Args:
+        ext: Extension including the leading dot (case-insensitive), e.g. ``.pdf``.
+
+    Returns:
+        The matching spec, or ``None`` if the extension is unsupported.
+    """
     return _BY_EXTENSION.get(ext.lower())
 
 
 def all_specs() -> tuple[FormatSpec, ...]:
+    """Return every registered :class:`FormatSpec`."""
     return _SPECS
 
 
 def supported_formats_message() -> str:
+    """Return a sorted, comma-separated list of supported extensions."""
     return ", ".join(sorted(SUPPORTED_EXTENSIONS))
 
 
 def sniff_extension(path: str) -> str | None:
     """Guess a supported extension from magic bytes for mis-named files.
 
-    Returns ``.pdf`` / ``.epub`` / ``.docx`` when recognized, or ``None`` if the
-    header is unknown or the ZIP container is an unsupported type.
+    Args:
+        path: Filesystem path to inspect.
+
+    Returns:
+        ``.pdf`` / ``.epub`` / ``.docx`` when recognized, or ``None`` if the
+        header is unknown or the ZIP container is an unsupported type.
     """
     with Path(path).open("rb") as handle:
         header = handle.read(_MAGIC_HEADER_BYTES)

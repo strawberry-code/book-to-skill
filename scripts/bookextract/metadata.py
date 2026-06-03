@@ -16,6 +16,14 @@ _TOKENS_PER_K: Final[int] = 1000
 
 
 def estimate_tokens(text: str) -> int:
+    """Estimate the LLM token count from a word count.
+
+    Args:
+        text: The text to measure.
+
+    Returns:
+        Approximate token count (words divided by an empirical ratio).
+    """
     return int(len(text.split()) / _WORDS_PER_TOKEN)
 
 
@@ -36,10 +44,16 @@ class MetadataInputs:
 
 
 def build_metadata(mi: MetadataInputs) -> dict[str, object]:
-    """Assemble the metadata.json payload. Pure: derives only from ``mi``.
+    """Assemble the ``metadata.json`` payload. Pure: derives only from ``mi``.
 
     The dynamic ``count_key`` (``pages`` / ``spine_items`` / ``sections``) is
     spliced in by name so the schema matches the historical contract exactly.
+
+    Args:
+        mi: The grouped inputs (text, format, method, counts, paths, structure).
+
+    Returns:
+        The metadata mapping ready to serialize to JSON.
     """
     tokens = estimate_tokens(mi.text)
     return {

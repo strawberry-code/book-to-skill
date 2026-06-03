@@ -37,10 +37,25 @@ class Extractor(Protocol):
     modes: tuple[ExtractionMode, ...]
 
     def available(self) -> bool:
-        """Cheap probe — never imports a heavy library or touches the document."""
+        """Report whether this strategy can run right now.
+
+        A cheap probe that never imports a heavy library or touches the document
+        (typically ``shutil.which`` or ``importlib.util.find_spec``).
+
+        Returns:
+            ``True`` if the backing tool/library is present.
+        """
 
     def extract(self, path: str) -> str | None:
-        """Return extracted text, or ``None`` if this strategy can't handle it."""
+        """Extract plain text from a document.
+
+        Args:
+            path: Filesystem path to the document.
+
+        Returns:
+            The extracted text, or ``None`` if this strategy could not handle the
+            file (so the chain should try the next one).
+        """
 
 
 class _BothModes:
@@ -55,7 +70,15 @@ class _BothModes:
 
 
 def read_text_file(path: str) -> str | None:
-    """Read a text file, trying a few common encodings before giving up."""
+    """Read a text file, trying a few common encodings before giving up.
+
+    Args:
+        path: Filesystem path to the text file.
+
+    Returns:
+        The decoded contents, or ``None`` if the file is unreadable or matches
+        none of the candidate encodings.
+    """
     for encoding in _TEXT_ENCODINGS:
         try:
             return Path(path).read_text(encoding=encoding)
@@ -68,7 +91,16 @@ def read_text_file(path: str) -> str | None:
 
 
 def run_text(cmd: list[str], timeout: int) -> str | None:
-    """Run a command and return its stdout, or ``None`` on failure/empty output."""
+    """Run a command and capture its stdout as text.
+
+    Args:
+        cmd: The command and arguments to execute.
+        timeout: Maximum seconds to wait before aborting.
+
+    Returns:
+        The captured stdout if the command exits 0 with non-empty output,
+        otherwise ``None``.
+    """
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=False)
     except (OSError, subprocess.SubprocessError) as exc:
@@ -111,7 +143,17 @@ class _HTMLTextExtractor(html.parser.HTMLParser):
 
 
 def extract_html_content(raw_html: str) -> str:
-    """HTML -> text via BeautifulSoup when present, else the stdlib parser."""
+    """Convert an HTML string to plain text.
+
+    Uses BeautifulSoup when installed (better whitespace handling), otherwise the
+    stdlib :class:`_HTMLTextExtractor`.
+
+    Args:
+        raw_html: The raw HTML markup.
+
+    Returns:
+        The extracted plain text.
+    """
     try:
         from bs4 import BeautifulSoup
     except ImportError:
@@ -125,7 +167,14 @@ def extract_html_content(raw_html: str) -> str:
 
 
 def strip_rtf_fallback(raw: str) -> str:
-    """Best-effort RTF -> text using regex control-word stripping."""
+    """Best-effort RTF to text using regex control-word stripping.
+
+    Args:
+        raw: The raw RTF document text.
+
+    Returns:
+        Plain text with control words, groups, and hex escapes removed.
+    """
     raw = re.sub(r"\\'[0-9a-fA-F]{2}", " ", raw)
     raw = re.sub(r"\\par[d]?", "\n", raw)
     raw = re.sub(r"\\tab", "\t", raw)
@@ -157,6 +206,14 @@ def _resolve_zip_entry(href: str, opf_dir: str, name_set: frozenset[str]) -> str
     may carry a fragment anchor (``chapter1.xhtml#sec2``) or be percent-encoded
     (``ch%201.xhtml``). Resolve against ``opf_dir`` first; if that misses, fall
     back to a basename match before giving up.
+
+    Args:
+        href: The raw href from the OPF manifest/spine.
+        opf_dir: The OPF file's directory within the archive (may be empty).
+        name_set: All entry names present in the ZIP.
+
+    Returns:
+        The matching ZIP entry name, or ``None`` if nothing resolves.
     """
     href = unquote(href.split("#", 1)[0])
     if not href:
