@@ -4,7 +4,7 @@ Extract text from a document file for book-to-skill processing.
 
 PDF extraction tries methods in order:
   1. pdftotext (poppler-utils) — best quality
-  2. PyPDF2 — common Python library
+  2. pypdf (or legacy PyPDF2) — common Python library
   3. pdfminer.six — thorough fallback
 
 EPUB extraction tries methods in order:
@@ -25,11 +25,13 @@ Outputs:
 Set BOOK_SKILL_WORKDIR to override the output directory.
 """
 
+import argparse
 import html
 import html.parser
 import importlib.util
 import json
 import os
+import posixpath
 import re
 import shutil
 import subprocess
@@ -61,13 +63,46 @@ SUPPORTED_EXTENSIONS = {
 
 PYTHON_DEPENDENCIES = {
     "docling": "docling",
-    "PyPDF2": "PyPDF2",
+    "pypdf": "pypdf",
     "pdfminer": "pdfminer.six",
     "ebooklib": "ebooklib",
     "bs4": "beautifulsoup4",
     "docx": "python-docx",
     "striprtf": "striprtf",
 }
+
+# Debug logging is opt-in: --debug flag or BOOK_SKILL_DEBUG truthy env var.
+# When off, extractor fallbacks stay quiet; when on, every swallowed exception
+# is surfaced on stderr so you can see which method failed and why.
+DEBUG = os.environ.get("BOOK_SKILL_DEBUG", "").lower() in {"1", "true", "yes", "on"}
+
+
+def set_debug(enabled: bool) -> None:
+    global DEBUG
+    DEBUG = enabled
+
+
+def log_debug(message: str) -> None:
+    if DEBUG:
+        print(f"[debug] {message}", file=sys.stderr)
+
+
+def _load_pdf_reader():
+    """Return a PdfReader class from pypdf (preferred) or PyPDF2 (legacy), or None.
+
+    pypdf is the maintained successor of PyPDF2; the API (PdfReader, .pages) is
+    identical, so callers are agnostic to which backend is present.
+    """
+    try:
+        from pypdf import PdfReader
+        return PdfReader
+    except ImportError:
+        pass
+    try:
+        from PyPDF2 import PdfReader
+        return PdfReader
+    except ImportError:
+        return None
 
 
 def estimate_tokens(text: str) -> int:
@@ -95,6 +130,15 @@ def install_python_packages(packages: list[str]) -> bool:
         return True
 
     print(f"Installing missing Python package(s): {', '.join(packages)}")
+    # Warn when installing into a non-virtualenv interpreter: pip would mutate the
+    # system/global Python. sys.prefix == sys.base_prefix means "not in a venv".
+    if sys.prefix == sys.base_prefix:
+        print(
+            "WARNING: not running inside a virtualenv — packages will install "
+            "into the global Python environment. Consider a venv or use "
+            "--no-install-missing to rely on fallbacks.",
+            file=sys.stderr,
+        )
     try:
         result = subprocess.run(
             [sys.executable, "-m", "pip", "install", *packages],
@@ -109,21 +153,63 @@ def install_python_packages(packages: list[str]) -> bool:
     return result.returncode == 0
 
 
-def normalize_install_mode(argv: list[str]) -> str:
+def normalize_install_mode(
+    install_missing: str | None = None,
+    no_install_missing: bool = False,
+) -> str:
+    """Resolve install behavior to one of 'yes' | 'no' | 'ask'.
+
+    Precedence: --no-install-missing wins, then --install-missing <value>,
+    then the BOOK_SKILL_INSTALL_MISSING env var, defaulting to 'ask'. Accepts a
+    range of truthy/falsy spellings for backward compatibility with the old
+    manual argv parser.
+    """
     mode = os.environ.get("BOOK_SKILL_INSTALL_MISSING", "ask").lower()
-    if "--no-install-missing" in argv:
+    if no_install_missing:
         return "no"
-    if "--install-missing" in argv:
-        idx = argv.index("--install-missing")
-        if idx + 1 < len(argv) and not argv[idx + 1].startswith("--"):
-            mode = argv[idx + 1].lower()
-        else:
-            mode = "yes"
+    if install_missing is not None:
+        mode = install_missing.lower()
     if mode in {"1", "true", "y", "yes", "install"}:
         return "yes"
     if mode in {"0", "false", "n", "no", "fallback", "skip"}:
         return "no"
     return "ask"
+
+
+def build_arg_parser() -> "argparse.ArgumentParser":
+    parser = argparse.ArgumentParser(
+        prog="extract.py",
+        description="Extract text from a document for book-to-skill processing.",
+        epilog=f"Supported formats: {supported_formats_message()}",
+    )
+    parser.add_argument("input_path", help="path to the document to extract")
+    parser.add_argument(
+        "--mode",
+        default="text",
+        help="extraction mode for PDF: 'technical' (Docling, layout-aware) "
+        "or 'text' (pdftotext chain). Default: text.",
+    )
+    parser.add_argument(
+        "--install-missing",
+        nargs="?",
+        const="yes",
+        default=None,
+        metavar="ask|yes|no",
+        help="install missing Python packages instead of using fallbacks. "
+        "Bare flag means 'yes'. Also via BOOK_SKILL_INSTALL_MISSING env var.",
+    )
+    parser.add_argument(
+        "--no-install-missing",
+        action="store_true",
+        help="never install; always use fallbacks (overrides --install-missing).",
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="log extractor fallbacks and swallowed errors to stderr. "
+        "Also via BOOK_SKILL_DEBUG env var.",
+    )
+    return parser
 
 
 def offer_dependency_install(
@@ -185,7 +271,7 @@ def prepare_dependencies(ext: str, extraction_mode: str, install_mode: str) -> N
     if ext == ".pdf" and not shutil.which("pdftotext"):
         offer_dependency_install(
             feature="PDF text extraction",
-            module_names=["PyPDF2", "pdfminer"],
+            module_names=["pypdf", "pdfminer"],
             fallback="any installed Python PDF parser; extraction fails if none are available",
             install_mode=install_mode,
         )
@@ -229,7 +315,8 @@ def read_text_file(path: str) -> str | None:
             return Path(path).read_text(encoding=encoding)
         except UnicodeDecodeError:
             continue
-        except Exception:
+        except Exception as exc:
+            log_debug(f"read_text_file({encoding}) failed: {exc}")
             return None
     return None
 
@@ -266,8 +353,10 @@ def extract_docx_with_python_docx(docx_path: str) -> str | None:
                     parts.append("\t".join(cells))
         return "\n".join(parts)
     except ImportError:
+        log_debug("python-docx not installed")
         return None
-    except Exception:
+    except Exception as exc:
+        log_debug(f"python-docx extraction failed: {exc}")
         return None
 
 
@@ -285,7 +374,8 @@ def extract_docx_with_zipfile(docx_path: str) -> str | None:
             if texts:
                 parts.append("".join(texts))
         return "\n".join(parts) if parts else None
-    except Exception:
+    except Exception as exc:
+        log_debug(f"stdlib DOCX extraction failed: {exc}")
         return None
 
 
@@ -334,9 +424,9 @@ def extract_rtf(rtf_path: str) -> tuple[str, str]:
         if text.strip():
             return text, "striprtf"
     except ImportError:
-        pass
-    except Exception:
-        pass
+        log_debug("striprtf not installed")
+    except Exception as exc:
+        log_debug(f"striprtf extraction failed: {exc}")
 
     return strip_rtf_fallback(raw), "rtf-regex"
 
@@ -354,8 +444,8 @@ def extract_with_ebook_convert(input_path: str) -> str | None:
             text = output_path.read_text(encoding="utf-8", errors="replace")
             if text.strip():
                 return text
-    except Exception:
-        pass
+    except Exception as exc:
+        log_debug(f"ebook-convert failed: {exc}")
     return None
 
 
@@ -369,26 +459,29 @@ def extract_with_pdftotext(pdf_path: str) -> str | None:
         )
         if result.returncode == 0 and result.stdout.strip():
             return result.stdout
-    except Exception:
-        pass
+    except Exception as exc:
+        log_debug(f"pdftotext failed: {exc}")
     return None
 
 
-def extract_with_pypdf2(pdf_path: str) -> str | None:
+def extract_with_pypdf(pdf_path: str) -> str | None:
+    reader_cls = _load_pdf_reader()
+    if reader_cls is None:
+        log_debug("pypdf/PyPDF2 not installed")
+        return None
     try:
-        import PyPDF2
         text_parts = []
         with open(pdf_path, "rb") as f:
-            reader = PyPDF2.PdfReader(f)
+            reader = reader_cls(f)
             for page in reader.pages:
                 try:
                     text_parts.append(page.extract_text() or "")
-                except Exception:
+                except Exception as exc:
+                    log_debug(f"pypdf page extract failed: {exc}")
                     text_parts.append("")
         return "\n".join(text_parts)
-    except ImportError:
-        return None
-    except Exception:
+    except Exception as exc:
+        log_debug(f"pypdf extraction failed: {exc}")
         return None
 
 
@@ -397,8 +490,10 @@ def extract_with_pdfminer(pdf_path: str) -> str | None:
         from pdfminer.high_level import extract_text
         return extract_text(pdf_path)
     except ImportError:
+        log_debug("pdfminer.six not installed")
         return None
-    except Exception:
+    except Exception as exc:
+        log_debug(f"pdfminer extraction failed: {exc}")
         return None
 
 
@@ -415,8 +510,10 @@ def extract_with_ebooklib(epub_path: str) -> str | None:
             parts.append(soup.get_text(separator="\n"))
         return "\n\n".join(parts)
     except ImportError:
+        log_debug("ebooklib/bs4 not installed")
         return None
-    except Exception:
+    except Exception as exc:
+        log_debug(f"ebooklib extraction failed: {exc}")
         return None
 
 
@@ -449,21 +546,59 @@ class _HTMLTextExtractor(html.parser.HTMLParser):
         return html.unescape("".join(self._parts))
 
 
+def _resolve_zip_entry(href: str, opf_dir: str, name_set: set[str]) -> str | None:
+    """Map an OPF spine href to its real ZIP entry name.
+
+    Spine hrefs are relative to the OPF file's directory, not the ZIP root, and
+    may carry a fragment anchor (``chapter1.xhtml#sec2``) or be percent-encoded
+    (``ch%201.xhtml``). Resolve against ``opf_dir`` first; if that misses, fall
+    back to a basename match before giving up — covers minor manifest quirks.
+    """
+    from urllib.parse import unquote
+
+    href = unquote(href.split("#", 1)[0])
+    if not href:
+        return None
+    candidate = posixpath.normpath(posixpath.join(opf_dir, href)) if opf_dir else href
+    if candidate in name_set:
+        return candidate
+    if href in name_set:  # already root-relative
+        return href
+    base = posixpath.basename(href)
+    for name in name_set:  # last resort: unique basename match
+        if posixpath.basename(name) == base:
+            return name
+    return None
+
+
 def extract_with_zipfile(epub_path: str) -> str | None:
     """stdlib-only EPUB extractor: unzip → parse HTML files."""
     try:
         with zipfile.ZipFile(epub_path) as zf:
             names = zf.namelist()
+            name_set = set(names)
             # Read OPF spine to get reading order, fall back to sorted xhtml files
-            spine_order: list[str] = []
+            html_files: list[str] = []
             opf_files = [n for n in names if n.endswith(".opf")]
             if opf_files:
+                opf_dir = posixpath.dirname(opf_files[0])
                 opf_text = zf.read(opf_files[0]).decode("utf-8", errors="replace")
-                spine_order = re.findall(r'href=["\']([^"\']+\.(?:xhtml|html))["\']', opf_text)
+                hrefs = re.findall(
+                    r'href=["\']([^"\']+\.(?:xhtml|html))["\']', opf_text
+                )
+                for href in hrefs:
+                    # Spine hrefs are relative to the OPF dir, not the ZIP root —
+                    # resolving them is the difference between full and empty text.
+                    resolved = _resolve_zip_entry(href, opf_dir, name_set)
+                    if resolved:
+                        html_files.append(resolved)
+                    else:
+                        log_debug(f"EPUB spine href unresolved: {href}")
 
-            html_files = spine_order or sorted(
-                n for n in names if n.endswith((".html", ".xhtml"))
-            )
+            if not html_files:
+                html_files = sorted(
+                    n for n in names if n.endswith((".html", ".xhtml"))
+                )
             if not html_files:
                 return None
 
@@ -474,10 +609,12 @@ def extract_with_zipfile(epub_path: str) -> str | None:
                     parser = _HTMLTextExtractor()
                     parser.feed(raw)
                     parts.append(parser.get_text())
-                except Exception:
+                except Exception as exc:
+                    log_debug(f"EPUB entry read failed ({name}): {exc}")
                     continue
             return "\n\n".join(parts) if parts else None
-    except Exception:
+    except Exception as exc:
+        log_debug(f"stdlib EPUB extraction failed: {exc}")
         return None
 
 
@@ -515,7 +652,8 @@ def count_epub_chapters(epub_path: str) -> int:
                 return 0
             opf_text = zf.read(opf_files[0]).decode("utf-8", errors="replace")
             return len(re.findall(r'<itemref\b', opf_text))
-    except Exception:
+    except Exception as exc:
+        log_debug(f"count_epub_chapters failed: {exc}")
         return 0
 
 
@@ -531,26 +669,47 @@ def count_pages(pdf_path: str) -> int:
                     return int(line.split(":")[1].strip())
         except Exception:
             pass
-    # Fallback: count form-feed chars (pdftotext -layout uses \f between pages)
+    # Fallback: count pages via pypdf/PyPDF2 reader length
     try:
-        import PyPDF2
+        reader_cls = _load_pdf_reader()
+        if reader_cls is None:
+            return 0
         with open(pdf_path, "rb") as f:
-            return len(PyPDF2.PdfReader(f).pages)
+            return len(reader_cls(f).pages)
     except Exception:
         return 0
 
 
 def detect_structure(text: str) -> dict:
-    """Detect chapter count and table of contents presence."""
-    import re
-    lines = text[:50000].splitlines()
+    """Detect chapter count and table of contents presence.
 
-    # Look for chapter headings
-    chapter_pattern = re.compile(
-        r"^\s*(chapter\s+\d+|CHAPTER\s+\d+|ch\.\s*\d+|\d+\.\s+[A-Z])",
-        re.IGNORECASE
+    Scans the whole text (cheap line iteration) rather than a fixed prefix so
+    chapters past the old 50k-char window aren't dropped.
+    """
+    lines = text.splitlines()
+
+    # Strong signal: an explicit "Chapter N" / "Capitolo N" / "ch. N" heading.
+    strong_pattern = re.compile(
+        r"^\s*(?:chapter|chapitre|capitolo|kapitel|cap[íi]tulo)\s+\d+\b"
+        r"|^\s*ch\.\s*\d+\b",
+        re.IGNORECASE,
     )
-    chapters_found = [l.strip() for l in lines if chapter_pattern.match(l)]
+    # Weak signal: a bare "N. Title" numbered heading. Constrained to short,
+    # heading-like lines (no trailing sentence punctuation) so numbered list
+    # items inside prose don't register as chapters.
+    numbered_pattern = re.compile(r"^\s*\d+\.\s+[A-Z]")
+
+    chapters_found: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if strong_pattern.match(stripped):
+            chapters_found.append(stripped)
+        elif (
+            numbered_pattern.match(stripped)
+            and len(stripped) <= 70
+            and stripped[-1] not in ".,;:"
+        ):
+            chapters_found.append(stripped)
 
     # Look for ToC indicators in the first ~30k chars (front matter is often well past 5k:
     # copyright pages, praise, dedications, forewords). Require the keyword to appear on
@@ -588,26 +747,24 @@ def extract_with_docling(pdf_path: str) -> str | None:
         result = converter.convert(pdf_path)
         return result.document.export_to_markdown()
     except ImportError:
+        log_debug("docling not installed")
         return None
-    except Exception:
+    except Exception as exc:
+        log_debug(f"docling extraction failed: {exc}")
         return None
 
 
 def main():
-    if len(sys.argv) < 2:
-        print("Usage: extract.py <path-to-document> [--mode technical|text] [--install-missing ask|yes|no]", file=sys.stderr)
-        print(f"Supported formats: {supported_formats_message()}", file=sys.stderr)
-        sys.exit(1)
+    args = build_arg_parser().parse_args()
 
-    input_path = sys.argv[1]
-    install_mode = normalize_install_mode(sys.argv)
+    if args.debug:
+        set_debug(True)
 
-    # Parse --mode flag
-    extraction_mode = "text"
-    if "--mode" in sys.argv:
-        idx = sys.argv.index("--mode")
-        if idx + 1 < len(sys.argv):
-            extraction_mode = sys.argv[idx + 1].lower()
+    input_path = args.input_path
+    install_mode = normalize_install_mode(args.install_missing, args.no_install_missing)
+
+    # Coerce unknown --mode values to 'text' (lenient, matches legacy behavior).
+    extraction_mode = args.mode.lower()
     if extraction_mode not in ("technical", "text"):
         extraction_mode = "text"
 
@@ -693,10 +850,10 @@ def main():
                 print("OK")
             else:
                 print("not available")
-                print("Trying PyPDF2...", end=" ", flush=True)
-                text = extract_with_pypdf2(input_path)
+                print("Trying pypdf...", end=" ", flush=True)
+                text = extract_with_pypdf(input_path)
                 if text:
-                    method = "PyPDF2"
+                    method = "pypdf"
                     print("OK")
                 else:
                     print("not available")
@@ -709,9 +866,9 @@ def main():
                         print("FAILED")
                         print(
                             "\nERROR: Could not extract text from PDF.\n"
-                            "Install one of: poppler-utils (pdftotext), PyPDF2, or pdfminer.six\n"
+                            "Install one of: poppler-utils (pdftotext), pypdf, or pdfminer.six\n"
                             "  sudo apt install poppler-utils\n"
-                            "  pip3 install PyPDF2\n"
+                            "  pip3 install pypdf\n"
                             "  pip3 install pdfminer.six",
                             file=sys.stderr,
                         )
