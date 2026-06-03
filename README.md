@@ -248,12 +248,23 @@ Then in any Claude Code session:
 
 ```
 book-to-skill/
-├── SKILL.md              # Skill definition + step-by-step instructions
+├── SKILL.md                  # Skill definition + step-by-step instructions
 ├── scripts/
-│   └── extract.py        # PDF + EPUB extraction (pdftotext / pypdf / pdfminer / ebooklib / zipfile)
+│   ├── extract.py            # Thin entrypoint shell (delegates to the package)
+│   └── bookextract/          # Extraction package (functional core + imperative shell)
+│       ├── cli.py            # argparse + orchestration — the only I/O layer
+│       ├── pipeline.py       # Chain-of-Responsibility runner over extractors
+│       ├── formats.py        # FormatSpec table: extension → chain/count/deps + sniffing
+│       ├── extractors.py     # Extractor Protocol + adapters (pdftotext/pypdf/ebooklib/…)
+│       ├── structure.py      # Chapter/ToC detection (pure)
+│       ├── metadata.py       # metadata.json assembly (pure)
+│       ├── deps.py           # Optional-dependency discovery + install flow
+│       └── types.py          # Mode literal, legal method names, error type, debug
 ├── tests/
-│   └── test_extract.py   # Synthetic-fixture tests for the extractor
-└── README.md             # This file
+│   └── test_extract.py       # Synthetic-fixture tests + contract golden tests
+├── pyproject.toml            # ruff / mypy / pytest configuration (quality gate)
+├── .pre-commit-config.yaml   # ruff + mypy + lizard + xenon + pytest hooks
+└── README.md                 # This file
 ```
 
 ---
@@ -264,9 +275,30 @@ book-to-skill/
 python3 -m pytest tests/ -q
 ```
 
-Fixtures (EPUB/DOCX/HTML/RTF) are built synthetically in-process — no binary
+Fixtures (PDF/EPUB/DOCX/HTML/RTF) are built synthetically in-process — no binary
 assets in the repo. Run `scripts/extract.py --debug <file>` to see which
 extractor was used and why a fallback kicked in.
+
+---
+
+## 🛡️ Quality gates
+
+The `bookextract` package is held to a strong **semantic-LOC** standard (NLOC
+counts logic only — comments, blanks, and imports don't count) plus strict typing
+and complexity ceilings. Dev tools: `ruff`, `mypy`, `lizard`, `xenon`, `pre-commit`.
+
+```bash
+pip3 install ruff mypy lizard xenon pre-commit   # dev dependencies
+pre-commit run --all-files                        # run the whole gate
+
+# or individually:
+ruff check scripts/ tests/                        # lint (blind-except & magic-number bans)
+mypy                                              # --strict type check
+lizard scripts/bookextract -T nloc=25 -C 8 -a 4 --warnings_only   # NLOC≤25, cyclomatic≤8, args≤4
+xenon --max-absolute B --max-average A scripts/bookextract        # complexity grade
+```
+
+Thresholds live in `pyproject.toml` and `.pre-commit-config.yaml`.
 
 ---
 
