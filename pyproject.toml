@@ -1,0 +1,52 @@
+# Tooling configuration for book-to-skill.
+#
+# This project ships no installable package — scripts/extract.py is invoked
+# directly. This file only configures the quality gate (ruff, mypy, pytest) that
+# enforces the "semantic LOC" rules on the bookextract package.
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["scripts"]
+
+[tool.ruff.lint]
+# E,F,W=pyflakes/pycodestyle · I=isort · N=naming · UP=pyupgrade · B=bugbear
+# C901=mccabe complexity · ANN=annotations · BLE=blind-except · PLR=pylint-refactor
+# SIM=simplify · RET=return · PTH=pathlib · TID=tidy-imports
+select = ["E", "F", "W", "I", "N", "UP", "B", "C901", "ANN", "BLE", "PLR", "SIM", "RET", "PTH", "TID"]
+# Severe semantic-LOC ceilings live in mccabe/pylint below; PLR2004 (magic
+# values) and BLE001 (blind except) are intentionally kept ON as hard rules.
+ignore = [
+    "ANN401",  # allow `object` in adapter boundaries where third-party types are unknown
+]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 8
+
+[tool.ruff.lint.pylint]
+max-args = 4
+max-branches = 8
+max-returns = 6
+
+[tool.ruff.lint.per-file-ignores]
+# Tests prioritize readability over the production ruleset: untyped fixtures,
+# asserts, magic numbers, and private-symbol access are all expected here.
+"tests/**" = ["ANN", "PLR2004", "PLR0913", "N802", "B011", "SIM"]
+# The entrypoint shell must mutate sys.path before importing the package.
+"scripts/extract.py" = ["E402"]
+
+[tool.mypy]
+python_version = "3.10"
+mypy_path = "scripts"
+strict = true
+warn_unused_ignores = true
+files = ["scripts/bookextract"]
+
+# Optional third-party extractors ship without type stubs; treat them as Any
+# rather than failing the strict gate on missing imports.
+[[tool.mypy.overrides]]
+module = ["docling.*", "ebooklib.*", "ebooklib", "pdfminer.*", "striprtf.*", "bs4", "docx", "pypdf", "PyPDF2"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,40 @@
+# Quality gate for book-to-skill. Local/system hooks use the tools installed in
+# the active environment (ruff, mypy, lizard, xenon, pytest) so there are no
+# pinned remote revisions to drift. Install with: pre-commit install
+repos:
+  - repo: local
+    hooks:
+      - id: ruff
+        name: ruff (lint)
+        entry: ruff check
+        language: system
+        types: [python]
+      - id: ruff-format
+        name: ruff (format)
+        entry: ruff format
+        language: system
+        types: [python]
+      - id: mypy
+        name: mypy (strict)
+        entry: mypy
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: lizard
+        name: lizard (semantic-LOC gate — NLOC<=25, CCN<=8, args<=4)
+        entry: python3 -m lizard scripts/bookextract -T nloc=25 -C 8 -a 4 --warnings_only
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: xenon
+        name: xenon (complexity grade — max-absolute B, max-average A)
+        entry: python3 -m xenon --max-absolute B --max-average A scripts/bookextract
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: pytest
+        name: pytest
+        entry: python3 -m pytest -q
+        language: system
+        pass_filenames: false
+        always_run: true
