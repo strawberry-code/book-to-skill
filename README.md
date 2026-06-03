@@ -302,6 +302,23 @@ Thresholds live in `pyproject.toml` and `.pre-commit-config.yaml`.
 
 ---
 
+## 📚 Documentation
+
+API docs are generated from the source docstrings with Sphinx (autodoc +
+Napoleon + type hints) and ship as a Read the Docs site.
+
+```bash
+pip3 install -r docs/requirements.txt
+sphinx-build -b html -W docs docs/_build/html   # build locally (warnings = errors)
+open docs/_build/html/index.html
+```
+
+`.readthedocs.yaml` builds the same site on Read the Docs (with
+`fail_on_warning: true`). Architecture overview lives in `docs/architecture.rst`;
+the per-module API reference in `docs/api.rst` is fully auto-generated.
+
+---
+
 ## License
 
 MIT
