@@ -27,6 +27,7 @@ from bookextract.formats import (
 )
 from bookextract.metadata import MetadataInputs, build_metadata
 from bookextract.pipeline import Attempt, ChainResult, run_chain
+from bookextract.progress import page_progress
 from bookextract.structure import detect_structure
 from bookextract.types import ExtractionMode, set_debug
 
@@ -59,6 +60,7 @@ class _Job:
     document_format: str
     mode: ExtractionMode
     workdir: Path
+    count_value: int  # pages / spine_items / sections, computed once
 
 
 def resolve_workdir() -> Path:
@@ -206,7 +208,7 @@ def _finish(job: _Job, result: ChainResult) -> None:
             extraction_mode=_recorded_mode(job.spec, job.mode, result.method),
             text=result.text,
             count_key=job.spec.count_key,
-            count_value=job.spec.count_pages(job.input_path),
+            count_value=job.count_value,
             output_text_path=str(output_text),
             file_size_mb=Path(job.input_path).stat().st_size / _BYTES_PER_MB,
             structure=detect_structure(result.text),
@@ -237,6 +239,59 @@ def _print_summary(metadata: dict[str, object], job: _Job) -> None:
     print(f"   Meta -> {job.workdir / 'metadata.json'}")
 
 
+def _is_docling_run(job: _Job) -> bool:
+    # Docling can't report per-page progress, so technical PDF gets a spinner.
+    return job.spec.name == "pdf" and job.mode == "technical"
+
+
+def _progress_description(job: _Job) -> str:
+    if _is_docling_run(job):
+        return f"Extracting {job.count_value} pages with Docling"
+    if job.count_value:
+        unit = job.spec.count_key.replace("_", " ")  # pages / spine items
+        return f"Extracting {job.count_value} {unit}"
+    return f"Extracting {job.document_format.upper()}"
+
+
+def _extract(job: _Job, *, debug: bool) -> ChainResult:
+    """Run the chain, quantifying progress by each format's natural unit.
+
+    A determinate bar is shown whenever the unit count is known and the backend
+    can tick it (PDF pages via pypdf, EPUB chapters); Docling can't report
+    per-page, so technical PDF shows an elapsed spinner instead. Formats without
+    a count (HTML/RTF/plain text) extract too fast to warrant a display.
+
+    Args:
+        job: The resolved per-run context.
+        debug: When ``True``, suppress the display (debug logging takes over).
+
+    Returns:
+        The chain result.
+    """
+    determinate = job.count_value > 0 and not _is_docling_run(job)
+    enabled = sys.stdout.isatty() and not debug and (determinate or _is_docling_run(job))
+    total = job.count_value if determinate else None
+    with page_progress(total, _progress_description(job), enabled=enabled) as reporter:
+        return run_chain(job.spec, job.input_path, job.mode, reporter)
+
+
+def _resolve_spec(input_path: str) -> tuple[str, FormatSpec]:
+    """Resolve the input path to its document format and :class:`FormatSpec`.
+
+    Args:
+        input_path: Path to the document (validated to exist by the caller).
+
+    Returns:
+        The ``(document_format, spec)`` pair. Exits the process if the format is
+        unsupported even after magic-byte sniffing.
+    """
+    ext, document_format = _resolve_format(input_path)
+    spec = spec_for_extension(ext)
+    if spec is None:
+        _die(f"Unsupported format '{ext or '<none>'}'. Supported: {supported_formats_message()}")
+    return document_format, spec
+
+
 def main() -> None:
     """CLI entrypoint: parse args, extract, write outputs, or exit with an error.
 
@@ -251,11 +306,7 @@ def main() -> None:
     if not Path(args.input_path).exists():
         _die(f"File not found: {args.input_path}")
 
-    ext, document_format = _resolve_format(args.input_path)
-    spec = spec_for_extension(ext)
-    if spec is None:
-        _die(f"Unsupported format '{ext or '<none>'}'. Supported: {supported_formats_message()}")
-
+    document_format, spec = _resolve_spec(args.input_path)
     workdir = resolve_workdir()
     workdir.mkdir(parents=True, exist_ok=True)
     mode = _coerce_mode(args.mode)
@@ -265,9 +316,13 @@ def main() -> None:
     _guard_calibre(spec)
 
     print(f"Extracting {document_format.upper()}: {args.input_path}")
-    result = run_chain(spec, args.input_path, mode)
+    job = _Job(
+        spec, args.input_path, document_format, mode, workdir,
+        spec.count_pages(args.input_path),
+    )
+    result = _extract(job, debug=args.debug)
     _render_attempts(result.attempts)
     if not result.succeeded:
         _die(f"Could not extract text from {document_format.upper()}.", spec.install_hint)
 
-    _finish(_Job(spec, args.input_path, document_format, mode, workdir), result)
+    _finish(job, result)

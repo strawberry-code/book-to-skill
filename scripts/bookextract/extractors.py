@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Final, Protocol, runtime_checkable
 from urllib.parse import unquote
 
-from bookextract.types import ExtractionMode, log_debug
+from bookextract.types import ExtractionMode, PageReporter, log_debug
 
 _PDFTOTEXT_TIMEOUT: Final[int] = 120
 _EBOOK_CONVERT_TIMEOUT: Final[int] = 300
@@ -46,11 +46,13 @@ class Extractor(Protocol):
             ``True`` if the backing tool/library is present.
         """
 
-    def extract(self, path: str) -> str | None:
+    def extract(self, path: str, reporter: PageReporter | None = None) -> str | None:
         """Extract plain text from a document.
 
         Args:
             path: Filesystem path to the document.
+            reporter: Optional progress callback, advanced once per page by
+                strategies that iterate pages (e.g. pypdf). Others ignore it.
 
         Returns:
             The extracted text, or ``None`` if this strategy could not handle the
@@ -241,7 +243,7 @@ class PdftotextExtractor(_BothModes):
     def available(self) -> bool:
         return shutil.which("pdftotext") is not None
 
-    def extract(self, path: str) -> str | None:
+    def extract(self, path: str, reporter: PageReporter | None = None) -> str | None:
         return run_text(["pdftotext", "-layout", path, "-"], _PDFTOTEXT_TIMEOUT)
 
 
@@ -251,17 +253,25 @@ class PypdfExtractor(_BothModes):
     def available(self) -> bool:
         return _pdf_reader_cls() is not None
 
-    def extract(self, path: str) -> str | None:
+    def extract(self, path: str, reporter: PageReporter | None = None) -> str | None:
         reader_cls = _pdf_reader_cls()
         if reader_cls is None:
             return None
         try:
             with Path(path).open("rb") as handle:
-                reader = reader_cls(handle)
-                return "\n".join(self._page_text(page) for page in reader.pages)
+                return self._read_pages(reader_cls(handle).pages, reporter)
         except (OSError, ValueError) as exc:
             log_debug(f"pypdf extraction failed: {exc}")
             return None
+
+    @staticmethod
+    def _read_pages(pages: object, reporter: PageReporter | None) -> str:
+        parts = []
+        for page in pages:  # type: ignore[attr-defined]
+            parts.append(PypdfExtractor._page_text(page))
+            if reporter is not None:
+                reporter(1)
+        return "\n".join(parts)
 
     @staticmethod
     def _page_text(page: object) -> str:
@@ -280,7 +290,7 @@ class PdfminerExtractor(_BothModes):
 
         return importlib.util.find_spec("pdfminer") is not None
 
-    def extract(self, path: str) -> str | None:
+    def extract(self, path: str, reporter: PageReporter | None = None) -> str | None:
         try:
             from pdfminer.high_level import extract_text
         except ImportError:
@@ -303,7 +313,7 @@ class DoclingExtractor:
 
         return importlib.util.find_spec("docling") is not None
 
-    def extract(self, path: str) -> str | None:
+    def extract(self, path: str, reporter: PageReporter | None = None) -> str | None:
         try:
             converter = self._build_converter()
         except ImportError:
@@ -342,7 +352,7 @@ class EbooklibExtractor(_BothModes):
 
         return all(importlib.util.find_spec(m) for m in ("ebooklib", "bs4"))
 
-    def extract(self, path: str) -> str | None:
+    def extract(self, path: str, reporter: PageReporter | None = None) -> str | None:
         try:
             import ebooklib
             from ebooklib import epub
@@ -350,10 +360,12 @@ class EbooklibExtractor(_BothModes):
             return None
         try:
             book = epub.read_epub(path)
-            parts = [
-                extract_html_content(item.get_content().decode("utf-8", errors="replace"))
-                for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT)
-            ]
+            parts = []
+            for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT):
+                html_bytes = item.get_content().decode("utf-8", errors="replace")
+                parts.append(extract_html_content(html_bytes))
+                if reporter is not None:
+                    reporter(1)
             return "\n\n".join(parts)
         except Exception as exc:  # noqa: BLE001 - ebooklib raises varied parse errors
             log_debug(f"ebooklib extraction failed: {exc}")
@@ -368,21 +380,26 @@ class ZipfileEpubExtractor(_BothModes):
     def available(self) -> bool:
         return True
 
-    def extract(self, path: str) -> str | None:
+    def extract(self, path: str, reporter: PageReporter | None = None) -> str | None:
         try:
             with zipfile.ZipFile(path) as zf:
-                return self._read_archive(zf)
+                return self._read_archive(zf, reporter)
         except (OSError, zipfile.BadZipFile) as exc:
             log_debug(f"stdlib EPUB extraction failed: {exc}")
             return None
 
-    def _read_archive(self, zf: zipfile.ZipFile) -> str | None:
+    def _read_archive(self, zf: zipfile.ZipFile, reporter: PageReporter | None) -> str | None:
         names = frozenset(zf.namelist())
         ordered = self._spine_order(zf, names) or self._fallback_order(names)
         if not ordered:
             return None
-        rendered = (self._read_entry(zf, name) for name in ordered)
-        body = [text for text in rendered if text is not None]
+        body = []
+        for name in ordered:
+            text = self._read_entry(zf, name)
+            if text is not None:
+                body.append(text)
+            if reporter is not None:
+                reporter(1)
         return "\n\n".join(body) if body else None
 
     @staticmethod
@@ -431,7 +448,7 @@ class PythonDocxExtractor(_BothModes):
 
         return importlib.util.find_spec("docx") is not None
 
-    def extract(self, path: str) -> str | None:
+    def extract(self, path: str, reporter: PageReporter | None = None) -> str | None:
         try:
             import docx
         except ImportError:
@@ -460,7 +477,7 @@ class ZipfileDocxExtractor(_BothModes):
     def available(self) -> bool:
         return True
 
-    def extract(self, path: str) -> str | None:
+    def extract(self, path: str, reporter: PageReporter | None = None) -> str | None:
         import xml.etree.ElementTree as ET
 
         ns = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
@@ -490,7 +507,7 @@ class StriprtfExtractor(_BothModes):
 
         return importlib.util.find_spec("striprtf") is not None
 
-    def extract(self, path: str) -> str | None:
+    def extract(self, path: str, reporter: PageReporter | None = None) -> str | None:
         raw = read_text_file(path)
         if raw is None:
             return None
@@ -512,7 +529,7 @@ class RtfRegexExtractor(_BothModes):
     def available(self) -> bool:
         return True
 
-    def extract(self, path: str) -> str | None:
+    def extract(self, path: str, reporter: PageReporter | None = None) -> str | None:
         raw = read_text_file(path)
         return strip_rtf_fallback(raw) if raw is not None else None
 
@@ -523,7 +540,7 @@ class HtmlExtractor(_BothModes):
     def available(self) -> bool:
         return True
 
-    def extract(self, path: str) -> str | None:
+    def extract(self, path: str, reporter: PageReporter | None = None) -> str | None:
         raw = read_text_file(path)
         return extract_html_content(raw) if raw is not None else None
 
@@ -534,7 +551,7 @@ class PlainTextExtractor(_BothModes):
     def available(self) -> bool:
         return True
 
-    def extract(self, path: str) -> str | None:
+    def extract(self, path: str, reporter: PageReporter | None = None) -> str | None:
         return read_text_file(path)
 
 
@@ -546,7 +563,7 @@ class EbookConvertExtractor(_BothModes):
     def available(self) -> bool:
         return shutil.which("ebook-convert") is not None
 
-    def extract(self, path: str) -> str | None:
+    def extract(self, path: str, reporter: PageReporter | None = None) -> str | None:
         with tempfile.TemporaryDirectory() as tmp:
             out_path = Path(tmp) / "ebook-convert-output.txt"
             try:

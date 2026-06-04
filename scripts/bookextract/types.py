@@ -9,10 +9,15 @@ other module can import it without cycles.
 from __future__ import annotations
 
 import sys
+from collections.abc import Callable
 from typing import Final, Literal
 
 #: PDF extraction mode selected by ``--mode``.
 ExtractionMode = Literal["technical", "text"]
+
+#: Callback an extractor may invoke to report progress, advancing by N units
+#: (pages). The CLI wires this to a progress bar; the core stays display-agnostic.
+PageReporter = Callable[[int], None]
 
 #: Every ``extraction_method`` string the project is allowed to emit into
 #: metadata.json. A test asserts that each registered extractor's ``name`` is a

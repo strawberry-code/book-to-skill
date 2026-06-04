@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from bookextract.formats import FormatSpec
-from bookextract.types import ExtractionMode
+from bookextract.types import ExtractionMode, PageReporter
 
 #: Per-strategy result. ``ok`` short-circuits the chain.
 Outcome = Literal["ok", "unavailable", "empty"]
@@ -35,7 +35,12 @@ class ChainResult:
         return self.text is not None
 
 
-def run_chain(spec: FormatSpec, path: str, mode: ExtractionMode) -> ChainResult:
+def run_chain(
+    spec: FormatSpec,
+    path: str,
+    mode: ExtractionMode,
+    reporter: PageReporter | None = None,
+) -> ChainResult:
     """Try each in-mode extractor in order; return the first that yields text.
 
     Args:
@@ -43,6 +48,7 @@ def run_chain(spec: FormatSpec, path: str, mode: ExtractionMode) -> ChainResult:
         path: Filesystem path to the document.
         mode: Active extraction mode; extractors not serving this mode are
             skipped entirely (e.g. Docling outside ``technical``).
+        reporter: Optional progress callback forwarded to each extractor.
 
     Returns:
         A :class:`ChainResult` with the winning text and method, plus an
@@ -56,7 +62,7 @@ def run_chain(spec: FormatSpec, path: str, mode: ExtractionMode) -> ChainResult:
         if not extractor.available():
             attempts.append(Attempt(extractor.name, "unavailable"))
             continue
-        text = extractor.extract(path)
+        text = extractor.extract(path, reporter)
         if text and text.strip():
             attempts.append(Attempt(extractor.name, "ok"))
             return ChainResult(text, extractor.name, tuple(attempts))
