@@ -404,7 +404,9 @@ class _FakeExtractor:
     def available(self):
         return self._available
 
-    def extract(self, path):  # noqa: ARG002 - signature parity with the protocol
+    def extract(self, path, reporter=None):  # noqa: ARG002 - parity with the protocol
+        if reporter is not None and self._text:
+            reporter(1)
         return self._text
 
 
@@ -496,6 +498,35 @@ def test_build_metadata_is_pure():
     assert meta["file_size_mb"] == 1.23
     assert meta["has_toc"] is True
     assert set(meta) == _FIXED_META_KEYS | {"pages"}
+
+
+def test_run_chain_forwards_reporter():
+    spec = _spec_with((_FakeExtractor("c", text="WON"),))
+    ticks = []
+    run_chain(spec, "x", "text", lambda n: ticks.append(n))
+    assert ticks == [1]
+
+
+def test_page_progress_disabled_is_noop():
+    from bookextract.progress import page_progress
+
+    with page_progress(10, "x", enabled=False) as reporter:
+        reporter(5)  # must not raise, renders nothing
+    assert callable(reporter)
+
+
+def test_pypdf_extractor_ticks_per_page(tmp_path):
+    from bookextract.extractors import PypdfExtractor
+
+    pdf = tmp_path / "p.pdf"
+    _write_pdf(pdf)
+    extractor = PypdfExtractor()
+    if not extractor.available():
+        return  # pypdf not installed in this environment
+    ticks = []
+    text = extractor.extract(str(pdf), lambda n: ticks.append(n))
+    assert text is not None
+    assert sum(ticks) >= 1  # at least one page reported
 
 
 def test_decide_install_via_imported_symbol():

@@ -254,6 +254,7 @@ book-to-skill/
 │   └── bookextract/          # Extraction package (functional core + imperative shell)
 │       ├── cli.py            # argparse + orchestration — the only I/O layer
 │       ├── pipeline.py       # Chain-of-Responsibility runner over extractors
+│       ├── progress.py       # Optional rich progress bar / spinner (TTY only)
 │       ├── formats.py        # FormatSpec table: extension → chain/count/deps + sniffing
 │       ├── extractors.py     # Extractor Protocol + adapters (pdftotext/pypdf/ebooklib/…)
 │       ├── structure.py      # Chapter/ToC detection (pure)
@@ -278,6 +279,12 @@ python3 -m pytest tests/ -q
 Fixtures (PDF/EPUB/DOCX/HTML/RTF) are built synthetically in-process — no binary
 assets in the repo. Run `scripts/extract.py --debug <file>` to see which
 extractor was used and why a fallback kicked in.
+
+When `rich` is installed and the output is a terminal, multi-unit extraction
+shows a live progress bar quantified by the format's natural unit — PDF pages
+(pypdf) or EPUB chapters — and an elapsed spinner for Docling (which can't report
+per-page). It's purely optional: without `rich`, off a TTY, or under `--debug`,
+extraction runs silently. Install with `pip3 install rich`.
 
 ---
 

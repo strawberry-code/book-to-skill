@@ -29,6 +29,9 @@ Layers
    * - :mod:`bookextract.pipeline`
      - :func:`~bookextract.pipeline.run_chain`, the generic
        Chain-of-Responsibility runner over a format's extractors.
+   * - :mod:`bookextract.progress`
+     - Optional ``rich`` progress display, driven by a page/chapter reporter
+       callback; a silent no-op off a TTY or when ``rich`` is absent.
    * - :mod:`bookextract.structure`
      - Pure chapter/table-of-contents detection.
    * - :mod:`bookextract.metadata`

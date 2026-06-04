@@ -27,6 +27,12 @@ pipeline
 .. automodule:: bookextract.pipeline
    :members:
 
+progress
+--------
+
+.. automodule:: bookextract.progress
+   :members:
+
 structure
 ---------
 

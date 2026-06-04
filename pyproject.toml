@@ -45,7 +45,7 @@ files = ["scripts/bookextract"]
 # Optional third-party extractors ship without type stubs; treat them as Any
 # rather than failing the strict gate on missing imports.
 [[tool.mypy.overrides]]
-module = ["docling.*", "ebooklib.*", "ebooklib", "pdfminer.*", "striprtf.*", "bs4", "docx", "pypdf", "PyPDF2"]
+module = ["docling.*", "ebooklib.*", "ebooklib", "pdfminer.*", "striprtf.*", "bs4", "docx", "pypdf", "PyPDF2", "rich.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
