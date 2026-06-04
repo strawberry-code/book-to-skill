@@ -246,6 +246,29 @@ def test_detect_structure_toc():
     assert structure.detect_structure("the contents of this book")["has_toc"] is False
 
 
+def test_detect_structure_dedups_repeated_strong_headings():
+    # A ToC listing each chapter + running page headers repeating the title must
+    # collapse onto one entry per chapter number (was inflating 24 -> 176).
+    toc = "".join(f"Chapter {n}: Title {n}\n" for n in range(1, 25))
+    headers = "Chapter 5: Title 5\n" * 30  # running header noise
+    result = structure.detect_structure(toc + headers + "body text\n")
+    assert result["chapters_detected"] == 24
+
+
+def test_detect_structure_strong_wins_over_numbered_body_lists():
+    # When real "Chapter N" headings exist, body numbered-lists must not add to
+    # the count via the weak fallback.
+    text = "Chapter 1: Intro\nChapter 2: Next\n1. First step\n2. Second step\n"
+    result = structure.detect_structure(text)
+    assert result["chapters_detected"] == 2
+
+
+def test_detect_structure_sample_in_chapter_order():
+    text = "3. Gamma\n1. Alpha\n2. Beta\n"
+    result = structure.detect_structure(text)
+    assert result["chapter_headings_sample"] == ["1. Alpha", "2. Beta", "3. Gamma"]
+
+
 # --------------------------------------------------------------------------- #
 # strip_rtf_fallback
 # --------------------------------------------------------------------------- #

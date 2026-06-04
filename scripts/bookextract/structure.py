@@ -10,13 +10,15 @@ import re
 from typing import Final
 
 # Strong signal: an explicit "Chapter N" / "Capitolo N" / "ch. N" heading.
+# The number is captured so repeats (ToC entries, running page headers) collapse
+# onto a single chapter instead of being counted once per occurrence.
 _STRONG_HEADING: Final[re.Pattern[str]] = re.compile(
-    r"^\s*(?:chapter|chapitre|capitolo|kapitel|cap[íi]tulo)\s+\d+\b"
-    r"|^\s*ch\.\s*\d+\b",
+    r"^\s*(?:chapter|chapitre|capitolo|kapitel|cap[íi]tulo)\s+(\d+)\b"
+    r"|^\s*ch\.\s*(\d+)\b",
     re.IGNORECASE,
 )
 # Weak signal: a bare "N. Title" numbered heading.
-_NUMBERED_HEADING: Final[re.Pattern[str]] = re.compile(r"^\s*\d+\.\s+[A-Z]")
+_NUMBERED_HEADING: Final[re.Pattern[str]] = re.compile(r"^\s*(\d+)\.\s+[A-Z]")
 # A line of body text wrongly shaped like a heading is excluded by these guards.
 _MAX_HEADING_LEN: Final[int] = 70
 _SENTENCE_TAIL: Final[str] = ".,;:"
@@ -29,12 +31,16 @@ _TOC_SCAN_CHARS: Final[int] = 30000
 _HEADING_SAMPLE: Final[int] = 10
 
 
-def _looks_like_numbered_heading(line: str) -> bool:
-    return (
-        bool(_NUMBERED_HEADING.match(line))
-        and len(line) <= _MAX_HEADING_LEN
-        and line[-1] not in _SENTENCE_TAIL
-    )
+def _numbered_heading_value(line: str) -> int | None:
+    """Chapter number for a bare ``N. Title`` heading, or None if not one.
+
+    The length/sentence-tail guards keep body prose ("1. The quick brown fox…")
+    from registering as a heading.
+    """
+    match = _NUMBERED_HEADING.match(line)
+    if match and len(line) <= _MAX_HEADING_LEN and line[-1] not in _SENTENCE_TAIL:
+        return int(match.group(1))
+    return None
 
 
 def detect_structure(text: str) -> dict[str, object]:
@@ -44,21 +50,36 @@ def detect_structure(text: str) -> dict[str, object]:
     are not dropped; the ToC keyword is matched on its own line within the front
     matter to avoid false positives like "the contents of this book are...".
 
+    Headings are deduplicated by chapter number: a ToC listing every chapter and
+    the running page header that repeats the title on each page would otherwise
+    each count, inflating the total (e.g. 24 real chapters reported as 176). The
+    strong "Chapter N" signal wins outright when present; the weak "N. Title"
+    form is only used as a fallback so body numbered-lists never mix in.
+
     Args:
         text: The full extracted document text.
 
     Returns:
         A dict with ``chapters_detected`` (int), ``chapter_headings_sample``
-        (list of up to 10 headings), and ``has_toc`` (bool).
+        (list of up to 10 headings in chapter-number order), and ``has_toc``
+        (bool).
     """
-    chapters_found: list[str] = []
+    strong: dict[int, str] = {}
+    numbered: dict[int, str] = {}
     for raw_line in text.splitlines():
         line = raw_line.strip()
-        if _STRONG_HEADING.match(line) or _looks_like_numbered_heading(line):
-            chapters_found.append(line)
+        match = _STRONG_HEADING.match(line)
+        if match:
+            strong.setdefault(int(match.group(1) or match.group(2)), line)
+            continue
+        weak_number = _numbered_heading_value(line)
+        if weak_number is not None:
+            numbered.setdefault(weak_number, line)
 
+    chosen = strong or numbered
+    ordered = [chosen[number] for number in sorted(chosen)]
     return {
-        "chapters_detected": len(chapters_found),
-        "chapter_headings_sample": chapters_found[:_HEADING_SAMPLE],
+        "chapters_detected": len(chosen),
+        "chapter_headings_sample": ordered[:_HEADING_SAMPLE],
         "has_toc": bool(_TOC_LINE.search(text[:_TOC_SCAN_CHARS])),
     }
