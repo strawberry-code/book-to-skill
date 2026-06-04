@@ -18,7 +18,10 @@
   <a href="#-requirements">Requirements</a> ·
   <a href="#-how-it-works">How it works</a> ·
   <a href="#-faq">FAQ</a> ·
-  <a href="#-install">Install</a>
+  <a href="#-install">Install</a> ·
+  <a href="#-tests">Tests</a> ·
+  <a href="#%EF%B8%8F-quality-gates">Quality gates</a> ·
+  <a href="#-documentation">Docs</a>
 </p>
 
 ---
@@ -117,6 +120,12 @@ The extractor tries tools in order per format and uses the first available. If n
 | RTF | `striprtf` (fallback: regex) | `pip3 install striprtf` |
 | MOBI / AZW / AZW3 | Calibre `ebook-convert` (external app, not pip) | https://calibre-ebook.com/download |
 | TXT / Markdown / reStructuredText / AsciiDoc | built-in | — |
+
+**Optional — nicer CLI:**
+
+| Tool | Install | What it adds |
+|------|---------|--------------|
+| `rich` | `pip3 install rich` | Live progress bar (PDF pages / EPUB chapters) and a Docling spinner on a TTY. Silently skipped if absent. |
 
 ---
 
@@ -219,19 +228,16 @@ book-to-skill is built for a different job: you want to go deep on one book and 
 Copy this into your Claude Code session:
 
 ```
-Install book-to-skill: https://raw.githubusercontent.com/virgiliojr94/book-to-skill/master/SKILL.md
+Install book-to-skill: https://raw.githubusercontent.com/strawberry-code/book-to-skill/master/SKILL.md
 ```
 
-Or manually:
+Or manually. The extractor is now a package (`scripts/bookextract/`), so copy the
+**whole** `scripts/` directory, not just `extract.py`:
 
 ```bash
-mkdir -p ~/.claude/skills/book-to-skill/scripts
-
-curl -o ~/.claude/skills/book-to-skill/SKILL.md \
-  https://raw.githubusercontent.com/virgiliojr94/book-to-skill/master/SKILL.md
-
-curl -o ~/.claude/skills/book-to-skill/scripts/extract.py \
-  https://raw.githubusercontent.com/virgiliojr94/book-to-skill/master/scripts/extract.py
+git clone https://github.com/strawberry-code/book-to-skill /tmp/book-to-skill
+mkdir -p ~/.claude/skills/book-to-skill
+cp -r /tmp/book-to-skill/SKILL.md /tmp/book-to-skill/scripts ~/.claude/skills/book-to-skill/
 ```
 
 Then in any Claude Code session:
@@ -329,13 +335,3 @@ the per-module API reference in `docs/api.rst` is fully auto-generated.
 ## License
 
 MIT
-
-## Star History
-
-<a href="https://www.star-history.com/?repos=virgiliojr94%2Fbook-to-skill&type=date&legend=top-left">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=virgiliojr94/book-to-skill&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=virgiliojr94/book-to-skill&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=virgiliojr94/book-to-skill&type=date&legend=top-left" />
- </picture>
-</a>
