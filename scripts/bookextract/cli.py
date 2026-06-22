@@ -31,6 +31,7 @@ from bookextract.pipeline import Attempt, ChainResult, run_chain
 from bookextract.progress import page_progress
 from bookextract.structure import detect_structure
 from bookextract.types import ExtractionMode, set_debug
+from bookextract.upgrade import ApplyResult, apply_plan, build_plan, render_plan
 
 _DEFAULT_MODE: Final[ExtractionMode] = "text"
 _VALID_MODES: Final[frozenset[str]] = frozenset({"technical", "text"})
@@ -308,6 +309,69 @@ def _resolve_spec(input_path: str) -> tuple[str, FormatSpec]:
     return document_format, spec
 
 
+def _default_changelog() -> Path:
+    """Repo ``CHANGELOG.md`` resolved relative to this package (root/scripts/bookextract)."""
+    return Path(__file__).resolve().parents[2] / "CHANGELOG.md"
+
+
+def _report_apply(result: ApplyResult) -> None:
+    """Print what an upgrade applied mechanically and what the model still owes."""
+    if result.changed_files:
+        print("Applied (mechanical):")
+        for name in result.changed_files:
+            print(f"   {name}")
+    if result.remaining:
+        print("\nModel-backed regeneration still required — run book-to-skill for:")
+        for entry in result.remaining:
+            issue = f" (#{entry.issue})" if entry.issue else ""
+            steps = f" — steps {', '.join(entry.steps)}" if entry.steps else ""
+            print(f"   {entry.description}{issue}{steps}")
+        print("Manifest NOT bumped until these are regenerated.")
+    elif result.bumped:
+        print("\nManifest bumped — skill fully upgraded.")
+
+
+def run_upgrade(argv: list[str]) -> None:
+    """Deterministic ``upgrade`` subcommand: plan the skill update, optionally apply it.
+
+    Reads the skill's manifest, diffs it against ``CHANGELOG.md``, and prints the
+    plan. ``--dry-run`` stops there. Otherwise mechanical transforms are applied and
+    any model-backed steps are reported; the manifest is bumped only when none remain.
+    """
+    parser = argparse.ArgumentParser(
+        prog="extract.py upgrade",
+        description="Plan/apply an upgrade of a generated skill to the current generator version.",
+    )
+    parser.add_argument("skill_dir", help="path to the generated skill directory")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="print the plan and exit without writing"
+    )
+    parser.add_argument(
+        "--changelog", default=None, help="override path to CHANGELOG.md (default: repo root)"
+    )
+    args = parser.parse_args(argv)
+
+    skill_dir = Path(args.skill_dir)
+    if not skill_dir.is_dir():
+        _die(f"Not a directory: {skill_dir}")
+    changelog = Path(args.changelog) if args.changelog else _default_changelog()
+    if not changelog.is_file():
+        _die(f"CHANGELOG not found: {changelog}", "pass --changelog <path>")
+
+    try:
+        plan = build_plan(skill_dir, __version__, changelog.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        _die(
+            f"No {skill_dir.name}/.book-to-skill.json manifest.",
+            "skill predates provenance — regenerate it from the original source.",
+        )
+
+    print(render_plan(plan))
+    if args.dry_run or plan.is_noop:
+        return
+    _report_apply(apply_plan(skill_dir, plan, __version__))
+
+
 def main() -> None:
     """CLI entrypoint: parse args, extract, write outputs, or exit with an error.
 
@@ -315,7 +379,13 @@ def main() -> None:
     missing optional dependencies, runs the extractor chain, and writes
     ``full_text.txt`` + ``metadata.json``. Exits non-zero on unsupported formats,
     missing files, or a fully failed extraction chain.
+
+    The ``upgrade`` subcommand (``extract.py upgrade <skill-dir>``) is dispatched
+    before extraction parsing so the default positional path stays backward-compatible.
     """
+    if len(sys.argv) > 1 and sys.argv[1] == "upgrade":
+        run_upgrade(sys.argv[2:])
+        return
     args = build_arg_parser().parse_args()
     if args.debug:
         set_debug(True)

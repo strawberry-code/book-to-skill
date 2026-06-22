@@ -39,6 +39,10 @@ future change can be propagated to already-generated skills selectively.
   `<skill>/.source/` (SKILL.md Step 10) so upgrades regenerate without re-extracting. [infra]
 - Upgrade flow: `book-to-skill upgrade <skill-dir>` (Mode 4) — manifest diff vs.
   this changelog, class-routed application, selective step re-run. [infra]
+- Deterministic upgrade planner: `extract.py upgrade <skill-dir> [--dry-run]`
+  parses this changelog, computes the semver delta vs. the skill manifest, verifies
+  the archived `.source/`, groups changes by class, applies registered mechanical
+  transforms, and bumps the manifest only when nothing model-backed remains. (#10) [infra]
 - Verifiable grounding: every framework/principle/technique/anti-pattern carries
   `[Ch N, p.PP] "verbatim quote"`; chapter ref always, page when derivable;
   Step 8.5 grep-verifies every quote and reports citation coverage. (#3)

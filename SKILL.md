@@ -668,20 +668,36 @@ Every `CHANGELOG.md` entry is tagged with how it must be applied:
 
 ### Upgrade procedure — `book-to-skill upgrade <skill-dir>`
 
-1. **Read the manifest.** Load `<skill-dir>/.book-to-skill.json`. Note its
-   `generator_version` (= the *from* version) and `source_sha256`. If missing,
-   the skill predates manifests → fall back to a full regenerate from the
-   original source (and ask the user to supply it).
+The deterministic decision (manifest read, CHANGELOG diff, semver delta, `.source/`
+verification, class grouping, manifest bump) is done by the planner command — do
+not re-derive it by hand:
 
-2. **Compute the delta.** Read this repo's `CHANGELOG.md`. Collect every entry
-   between the manifest's `generator_version` (exclusive) and the current
-   `__version__` (inclusive). If they are equal, report "already current" and stop.
+```bash
+# Show the plan without writing anything:
+"$PYTHON_BIN" "$SCRIPT_PATH" upgrade "<skill-dir>" --dry-run
+```
+`SCRIPT_PATH` is the same `extract.py` resolved in Step 2. The command prints the
+grouped plan (additive / transform / regenerate / skipped), whether the archived
+`.source/` is present and matches, and what — if anything — still needs
+model-backed regeneration. Then:
 
-3. **Confirm `.source/` for regenerate-class changes.** If any delta entry is
-   `regenerate`, require `<skill-dir>/.source/full_text.txt`. If absent, ask the
-   user for the original document and re-extract once (Step 2) into `.source/`.
+1. **Read the plan.** If it says "already current", stop. If it reports
+   `MISSING — re-extract needed`, the skill has no usable `.source/`: ask the user
+   for the original document and re-extract once (Step 2) into `.source/`.
+   If there is no manifest at all, the skill predates provenance → fall back to a
+   full regenerate from the original source.
 
-4. **Apply in class order — cheapest first:**
+2. **Run without `--dry-run`** to apply mechanical transforms and bump the manifest
+   when nothing model-backed remains. The command lists any `regenerate` (and
+   un-mechanizable `additive`/`transform`) entries it left for you.
+
+3. **Execute the model-backed remainder** the command reported — for each entry,
+   re-run only the SKILL.md steps it names (e.g. `steps 7,8,8.5,9`) over
+   `.source/full_text.txt`. Preserve the skill name, paths, and user edits to
+   unaffected files. After regenerating, rewrite the manifest (Step 9.5) with the
+   new `generator_version`.
+
+4. **Class order — cheapest first (what the planner applies / you regenerate):**
    - **additive** → create each new artifact from the existing skill files (and
      `.source/full_text.txt` only if the entry says so). Never touch unrelated files.
    - **transform** → rewrite only the named files in place.
