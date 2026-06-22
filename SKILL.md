@@ -600,7 +600,8 @@ argument-hint: [topic, framework name, chapter number, or "review <path>"]
 <!-- DESCRIPTION TUNING (feature #2): fold the strongest trigger contexts from cues.md
      into the sentence above so the agent's auto-discovery fires on matching work, not
      only on explicit questions. Keep them concrete (task/code/file situations).
-     ARGUMENT-HINT: include "review <path>" ONLY when review-rules.md exists. -->
+     ARGUMENT-HINT: include "review <path>" ONLY when review-rules.md exists; include
+     "<topic> in <stack>" ONLY for code/technical books (feature #9). -->
 
 # <Full Title>
 **Author**: <Author(s)> | **Pages**: ~<N> | **Chapters**: <N> | **Generated**: <YYYY-MM-DD> | **book-to-skill**: v<generator_version>
@@ -611,6 +612,7 @@ argument-hint: [topic, framework name, chapter number, or "review <path>"]
 - **With a topic** — ask about `replication`, `pricing`, or another indexed topic; I find and read the relevant chapter
 - **With chapter** — ask for `ch05`; I load that specific chapter
 - **Review** — `review <path>`: audit a codebase against this book's rules *(only when review-rules.md exists)*
+- **In your stack** — ask for a concept "in Go / Spring / TypeScript"; I re-render the book's example in your language while citing the original *(only for code/technical books, feature #9)*
 - **Browse** — ask "what chapters do you have?" to see the full index
 
 When you ask about a topic not covered in Core Frameworks below, I will read
@@ -691,6 +693,24 @@ Files scanned: <N> | Rules applied: <A> of <T>
 
 ---
 
+<!-- PERSONALIZE SECTION (feature #9): include the block below ONLY for code/technical
+     books (same gate as the reviewer section). Omit it for non-code books. -->
+
+## Adapting examples to your stack
+
+Ask for any concept "in <your stack>" — e.g. "the Specification pattern in TypeScript",
+"show this in Go", "Spring instead of Quarkus". I re-express the book's example in your
+language/framework while preserving its intent, and I keep the original:
+
+1. Read the cited example from the relevant `chapters/chNN-*.md` (with its `[Ch N]` citation).
+2. Re-render it in your stack idiomatically — same behaviour and invariants, your syntax.
+3. Show the original (or its citation) alongside, so the mapping is auditable; the book
+   stays the source of truth. I never present a translation as if it were the book's text.
+
+If a construct has no faithful equivalent in your stack, I say so rather than forcing it.
+
+---
+
 ## Scope & Limits
 
 This skill covers the book content only. For hands-on implementation in your codebase,
@@ -698,6 +718,7 @@ combine with project-specific tools. For topics beyond this book, check related 
 or ask the agent directly.
 <!-- If review-rules.md was NOT written (non-code book), add here:
      "This skill has no machine-checkable rule set; `review <path>` is not supported for this book." -->
+<!-- If the Adapting-examples section was omitted (non-code book), no extra line is needed. -->
 ```
 
 ---
@@ -734,6 +755,9 @@ manifest = {
         1 for line in (skill_dir / "review-rules.md").read_text().splitlines()
         if line.startswith("### ")
     ) if (skill_dir / "review-rules.md").is_file() else 0,
+    # Feature #9: whether this skill offers stack-personalized examples (code books only;
+    # tracks the reviewable gate — a book worth review rules has code examples to re-render).
+    "personalizable": (skill_dir / "review-rules.md").is_file(),
 }
 (skill_dir / ".book-to-skill.json").write_text(json.dumps(manifest, indent=2) + "\n")
 print("manifest written:", skill_dir / ".book-to-skill.json")

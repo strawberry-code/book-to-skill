@@ -26,6 +26,19 @@ re-runs only those — not the whole pipeline.
 
 ---
 
+## [1.4.0] — 2026-06-22
+
+### Added
+- Personalize examples to the user's stack: code/technical skills gain an "Adapting
+  examples to your stack" capability in `SKILL.md` — on request ("the Specification
+  pattern in TypeScript", "show this in Go") the skill re-renders a cited book example
+  in the user's language/framework, preserving intent and keeping the original visible
+  and cited (never presenting the translation as the book's text). Gated on the manifest
+  `reviewable` flag (a book worth review rules has code examples to re-render); non-code
+  books get `personalizable: false` and no change. Injected as a registered mechanical
+  transform (no model, no source re-read) anchored before `## Scope & Limits`, and widens
+  the `argument-hint`. (#9) [transform; SKILL.md capability + manifest personalizable]
+
 ## [1.3.0] — 2026-06-22
 
 ### Added

@@ -11,6 +11,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -423,9 +424,81 @@ def _page_offset_transform(skill_dir: Path, source_dir: Path) -> list[str]:
     return changed
 
 
+# Feature #9 — the stack-personalization capability injected into a code skill's SKILL.md.
+# Static and generic: the per-query re-rendering is done by the agent at use time from the
+# skill's own chapters, so the instruction is the feature.
+_PERSONALIZE_HEADING: Final[str] = "## Adapting examples to your stack"
+_SCOPE_HEADING: Final[str] = "## Scope & Limits"
+_PERSONALIZE_SECTION: Final[str] = f"""{_PERSONALIZE_HEADING}
+
+Ask for any concept "in <your stack>" — e.g. "the Specification pattern in TypeScript",
+"show this in Go", "Spring instead of Quarkus". I re-express the book's example in your
+language/framework while preserving its intent, and I keep the original:
+
+1. Read the cited example from the relevant `chapters/chNN-*.md` (with its `[Ch N]` citation).
+2. Re-render it in your stack idiomatically — same behaviour and invariants, your syntax.
+3. Show the original (or its citation) alongside, so the mapping is auditable; the book
+   stays the source of truth. I never present a translation as if it were the book's text.
+
+If a construct has no faithful equivalent in your stack, I say so rather than forcing it.
+"""
+_ARG_HINT: Final[re.Pattern[str]] = re.compile(r"^(argument-hint:\s*\[)(.*?)(\]\s*)$", re.MULTILINE)
+
+
+def _inject_personalize(text: str) -> str:
+    """Insert the personalize section before ``## Scope & Limits``, else append it. Idempotent."""
+    if _PERSONALIZE_HEADING in text:
+        return text
+    if _SCOPE_HEADING in text:
+        return text.replace(_SCOPE_HEADING, f"{_PERSONALIZE_SECTION}\n---\n\n{_SCOPE_HEADING}", 1)
+    return f"{text.rstrip()}\n\n---\n\n{_PERSONALIZE_SECTION}"
+
+
+def _widen_arg_hint(text: str) -> str:
+    """Add a ``"<topic> in <stack>"`` cue to a ``[…]``-form argument-hint, once, if missing."""
+
+    def repl(match: re.Match[str]) -> str:
+        inner = str(match.group(2))
+        if "stack" in inner.lower():
+            return str(match.group(0))
+        return f'{match.group(1)}{inner}, or "<topic> in <stack>"{match.group(3)}'
+
+    return _ARG_HINT.sub(repl, text, count=1)
+
+
+def _personalize_transform(skill_dir: Path, _source_dir: Path) -> list[str]:
+    """#9 mechanical transform: add the stack-personalization capability to code skills.
+
+    Gated on the manifest ``reviewable`` flag (a book worth review rules has code examples
+    to re-render); non-code skills get ``personalizable: false`` and no SKILL.md change.
+    No model, no source re-read.
+    """
+    manifest_path = skill_dir / MANIFEST_NAME
+    data = (
+        json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.is_file() else None
+    )
+    reviewable = bool(data.get("reviewable")) if data else False
+    changed: list[str] = []
+    skill_md = skill_dir / "SKILL.md"
+    if reviewable and skill_md.is_file():
+        original = skill_md.read_text(encoding="utf-8")
+        updated = _widen_arg_hint(_inject_personalize(original))
+        if updated != original:
+            skill_md.write_text(updated, encoding="utf-8")
+            changed.append("SKILL.md")
+    if data is not None:
+        data["personalizable"] = reviewable
+        payload = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
+        manifest_path.write_text(payload, encoding="utf-8")
+    return changed
+
+
 # Issue-number → mechanical transform. The upgrade flow applies these in place without
 # a model call (the payoff of the ``transform`` migration class).
-_UPGRADE_TRANSFORMS: Final[dict[str | None, TransformFn]] = {"11": _page_offset_transform}
+_UPGRADE_TRANSFORMS: Final[dict[str | None, TransformFn]] = {
+    "9": _personalize_transform,
+    "11": _page_offset_transform,
+}
 
 
 def run_upgrade(argv: list[str]) -> None:
