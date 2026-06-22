@@ -1,10 +1,11 @@
 <h1 align="center">📚 book-to-skill</h1>
 
 <p align="center">
-  <video src="https://raw.githubusercontent.com/strawberry-code/book-to-skill/master/assets/hero.mp4" autoplay loop muted playsinline width="760">
-    <a href="https://raw.githubusercontent.com/strawberry-code/book-to-skill/master/assets/hero.mp4"><img src="assets/hero.gif" alt="book-to-skill — the book reviews your code" width="760"></a>
-  </video>
+  <a href="https://raw.githubusercontent.com/strawberry-code/book-to-skill/master/assets/hero.mp4" title="Watch in HD">
+    <img src="assets/hero.gif" alt="book-to-skill — the book reviews your code" width="720">
+  </a>
 </p>
+<p align="center"><sub>▶ <a href="https://raw.githubusercontent.com/strawberry-code/book-to-skill/master/assets/hero.mp4">Watch in HD</a></sub></p>
 
 <p align="center">
   <strong>Turn any technical book or document into a Claude Code skill — one that doesn't just explain the book, but reviews your code against it, scaffolds its approach, and re-renders its examples in your stack.</strong>
