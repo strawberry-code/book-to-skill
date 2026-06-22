@@ -83,20 +83,32 @@ do not move the PDF.
 
 ## Step 2 — Generate the skill (current session)
 
-Follow `book-to-skill` **Steps 3 and 5–9** using the extracted `full_text.txt`,
-with `BOOK_TYPE=technical` throughout (prioritize Code Examples, Reference
-Tables, Commands & APIs; preserve exact syntax).
+**Delegate to `book-to-skill` verbatim — do not re-describe or enumerate its steps
+here.** Read the current `book-to-skill` `SKILL.md` and run its full generation
+pipeline, **Steps 3 through 10**, against the extracted `full_text.txt`, with
+`BOOK_TYPE=technical` throughout (prioritize Code Examples, Reference Tables,
+Commands & APIs; preserve exact syntax).
 
-- Skip Step 4 (purpose question) — assume "All of the above"; this is a one-shot.
-- Step 5: if `SKILL_NAME` was given, use it. Otherwise derive an
-  author-concept or title slug as book-to-skill describes. Default
-  `SKILLS_HOME="$HOME/.claude/skills"`. Refuse to overwrite an existing
-  `$SKILLS_HOME/<skill_name>/` — append `-2` or ask.
-- Steps 6–9: create the directory, chapter files, glossary/patterns/cheatsheet,
-  and the master `SKILL.md`, honoring the token budgets.
+Produce **every artifact and feature those steps currently specify** — whatever they
+are. This wrapper deliberately does **not** list them (grounding citations, glossary,
+patterns, cheatsheet, cues, review-rules, `templates/`, the personalize section, the
+provenance manifest, `.source/` archival, …) so that **new generator features apply
+automatically and this file never goes stale**. If the generator gains a step, you
+inherit it for free here.
+
+Two fixed deviations only:
+- **Skip Step 4** (purpose question) — assume "All of the above"; this is a one-shot.
+- **Step 5 naming**: if `SKILL_NAME` was given, use it; else derive an author-concept
+  or title slug as book-to-skill describes. Default `SKILLS_HOME="$HOME/.claude/skills"`.
+  Refuse to overwrite an existing `$SKILLS_HOME/<skill_name>/` — append `-2` or ask.
 
 Do all generation in THIS session (Read/Write the files directly) — that is the
 "create the skill using the current Claude session" requirement.
+
+**Citation caveat (technical mode).** Docling output carries no page breaks, so
+grounding citations are **chapter-level only** (`[Ch N]`) and the manifest
+`page_offset` is `null`. That is expected for shred-book — page folios (#11) apply
+only to text-mode PDF extraction via `/book-to-skill`.
 
 If generation cannot complete (e.g. unreadable text, zero chapters found), STOP
 before Step 3 — leave the PDF where it is.
