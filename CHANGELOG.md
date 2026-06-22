@@ -47,6 +47,10 @@ future change can be propagated to already-generated skills selectively.
   reconstructs a pre-provenance skill — extracts the original document into `.source/`
   and writes a manifest pinned at a baseline version so a later `upgrade` applies every
   content feature. Enables upgrading skills generated before manifests existed. [infra]
+- Batch backfill: `extract.py backfill-batch <skills-dir> <archive-dir> [--apply]`
+  fuzzy-matches every pre-provenance skill to its source by title-token overlap and
+  backfills the confident matches (dry-run by default; ambiguous/unmatched are reported,
+  never guessed). Pure matcher in `batch.py`, unit-tested. [infra]
 - Verifiable grounding: every framework/principle/technique/anti-pattern carries
   `[Ch N, p.PP] "verbatim quote"`; chapter ref always, page when derivable;
   Step 8.5 grep-verifies every quote and reports citation coverage. (#3)

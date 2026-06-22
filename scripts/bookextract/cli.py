@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Final, NoReturn, cast
 
 from bookextract import __version__, deps
+from bookextract.batch import Match, match_sources
 from bookextract.deps import OfferContext, normalize_install_mode
 from bookextract.formats import (
     FormatSpec,
@@ -489,6 +490,82 @@ def run_backfill(skill_dir: Path, args: argparse.Namespace) -> None:
     )
 
 
+def _print_match_report(matches: list[Match]) -> list[Match]:
+    """Print the confident/ambiguous/unmatched breakdown; return the confident ones."""
+    confident = [m for m in matches if m.source]
+    ambiguous = [m for m in matches if m.ambiguous]
+    unmatched = [m for m in matches if not m.source and not m.ambiguous]
+    print(
+        f"Pre-provenance skills: {len(matches)} | confident: {len(confident)} | "
+        f"ambiguous: {len(ambiguous)} | unmatched: {len(unmatched)}"
+    )
+    for m in confident:
+        print(f"  OK   {m.slug}  <-  {(m.source or '')[:55]}  (score {m.score})")
+    for m in ambiguous:
+        print(f"  ??   {m.slug}  ambiguous (score {m.score}) — backfill manually with --source")
+    for m in unmatched:
+        print(f"  --   {m.slug}  no confident source (best {m.score})")
+    return confident
+
+
+def run_backfill_batch(argv: list[str]) -> None:
+    """Batch-backfill every pre-provenance skill in a directory by fuzzy-matching sources.
+
+    Scans ``skills_dir`` for skills lacking a manifest, matches each to a file in
+    ``archive_dir`` by title-token overlap, and (with ``--apply``) backfills the
+    confident matches. Ambiguous/unmatched skills are reported for manual handling
+    rather than guessed. Dry-run by default.
+    """
+    parser = argparse.ArgumentParser(
+        prog="extract.py backfill-batch",
+        description="Fuzzy-match pre-provenance skills to archived sources and backfill them.",
+    )
+    parser.add_argument("skills_dir", help="directory of generated skills")
+    parser.add_argument("archive_dir", help="directory of original source documents")
+    parser.add_argument(
+        "--apply", action="store_true", help="backfill confident matches (else dry-run)"
+    )
+    parser.add_argument("--pin", default="0.0.0", help="version to pin backfilled manifests at")
+    parser.add_argument("--mode", default="text", help="extraction mode: text|technical")
+    parser.add_argument("--threshold", type=float, default=0.6, help="min token-overlap to accept")
+    parser.add_argument("--debug", action="store_true", help="verbose extractor logging")
+    args = parser.parse_args(argv)
+
+    skills_dir, archive = Path(args.skills_dir), Path(args.archive_dir)
+    if not skills_dir.is_dir():
+        _die(f"Not a directory: {skills_dir}")
+    if not archive.is_dir():
+        _die(f"Not a directory: {archive}")
+
+    pre = [
+        d.name
+        for d in sorted(skills_dir.iterdir())
+        if d.is_dir() and not (d / MANIFEST_NAME).exists()
+    ]
+    files = [p.name for p in archive.iterdir() if p.is_file()]
+    confident = _print_match_report(match_sources(pre, files, threshold=args.threshold))
+    if not args.apply:
+        print("\n(dry-run — pass --apply to backfill the confident matches)")
+        return
+
+    done, failed = 0, []
+    for m in confident:
+        assert m.source is not None  # confident matches always carry a source
+        namespace = argparse.Namespace(
+            source=str(archive / m.source),
+            pin=args.pin,
+            mode=args.mode,
+            force=False,
+            debug=args.debug,
+        )
+        try:
+            run_backfill(skills_dir / m.slug, namespace)
+            done += 1
+        except SystemExit:  # _die raises SystemExit on a single failure; keep the batch going
+            failed.append(m.slug)
+    print(f"\nBackfilled {done} | failed {len(failed)}: {failed}")
+
+
 def main() -> None:
     """CLI entrypoint: parse args, extract, write outputs, or exit with an error.
 
@@ -502,6 +579,9 @@ def main() -> None:
     """
     if len(sys.argv) > 1 and sys.argv[1] == "upgrade":
         run_upgrade(sys.argv[2:])
+        return
+    if len(sys.argv) > 1 and sys.argv[1] == "backfill-batch":
+        run_backfill_batch(sys.argv[2:])
         return
     args = build_arg_parser().parse_args()
     if args.debug:
