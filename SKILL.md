@@ -432,6 +432,38 @@ Create `$SKILLS_HOME/<skill_name>/cheatsheet.md`:
 - The content you'd want on a single printed page
 - Max 1,000 tokens
 
+### cues.md — proactive activation cues
+Create `$SKILLS_HOME/<skill_name>/cues.md`. This is what makes the skill fire
+*while the user works*, not only when explicitly asked. Map each major framework to
+the concrete coding/working situations that should bring it to mind.
+
+For EACH major framework/principle/anti-pattern, attach ≥1 **trigger** — a situation
+the agent can detect from the current task, expressed as one or more of:
+- **task keywords** — what the user is doing ("retry", "migration", "controller", "rate limit")
+- **code shapes** — constructs in view ("a class importing a framework package", "a nested loop", "a public setter")
+- **file patterns** — globs that signal the context (`**/adapters/**`, `*.tf`, `**/*Controller*`)
+
+Format (keep ≤ 1,500 tokens, most-used frameworks first):
+```markdown
+# Activation Cues — <skill_name>
+When the current task matches a trigger below, recall the named framework and, if
+useful, read the cited chapter before advising.
+
+| When you're… (trigger) | Recall | Where |
+|------------------------|--------|-------|
+| writing a REST adapter / `**/adapters/**`, "controller" | Ports & Adapters boundary rule | ch04 |
+| domain code `import`ing a framework package | Dependency inversion / clean core | ch03 |
+| "retry", "backoff", flaky network call | <framework> | chNN |
+
+## Triggers index (keyword → framework → chapter)
+- **controller**, **endpoint** → Ports & Adapters → ch04
+- **import framework in domain** → Dependency Rule → ch03
+```
+Rules:
+- Triggers must be **concrete and detectable**, not vague ("when designing" is too broad).
+- Every major framework gets ≥1 cue; cover the frameworks already named in the chapters.
+- This file is derived from the captured frameworks — it needs no source re-read.
+
 ---
 
 ## Step 8.5 — Grounding self-check (verify every quote)
@@ -476,12 +508,15 @@ Create `$SKILLS_HOME/<skill_name>/SKILL.md`:
 ```markdown
 ---
 name: <skill_name>
-description: "Knowledge base from \"<Full Title>\" by <Author(s)>. Use when applying <author>'s frameworks for <key topics, 3–6 terms>, studying the book, or referencing its concepts."
+description: "Knowledge base from \"<Full Title>\" by <Author(s)>. Use when applying <author>'s frameworks for <key topics, 3–6 terms>, studying the book, or referencing its concepts. Proactively recall when working on <2–4 concrete trigger contexts from cues.md, e.g. 'REST adapters', 'retry/backoff', 'schema migrations'>."
 allowed-tools:
   - Read
   - Grep
 argument-hint: [topic, framework name, or chapter number]
 ---
+<!-- DESCRIPTION TUNING (feature #2): fold the strongest trigger contexts from cues.md
+     into the sentence above so the agent's auto-discovery fires on matching work, not
+     only on explicit questions. Keep them concrete (task/code/file situations). -->
 
 # <Full Title>
 **Author**: <Author(s)> | **Pages**: ~<N> | **Chapters**: <N> | **Generated**: <YYYY-MM-DD> | **book-to-skill**: v<generator_version>
@@ -529,6 +564,7 @@ the relevant chapter file before answering.
 - [glossary.md](glossary.md) — all key terms with definitions
 - [patterns.md](patterns.md) — all techniques and design patterns
 - [cheatsheet.md](cheatsheet.md) — quick reference tables and decision guides
+- [cues.md](cues.md) — activation cues: trigger → framework → chapter (read when a task matches a trigger)
 
 ---
 

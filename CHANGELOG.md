@@ -26,6 +26,15 @@ re-runs only those — not the whole pipeline.
 
 ---
 
+## [1.1.0] — 2026-06-22
+
+### Added
+- Proactive activation cues: generated skills emit `cues.md` mapping a trigger
+  (task keyword / code shape / file pattern) → framework → chapter, and fold the
+  strongest triggers into the SKILL.md `description` so auto-discovery fires while
+  the user works, not only on explicit questions. Derived from the already-captured
+  frameworks — needs no source re-read. (#2) [additive; new file cues.md]
+
 ## [1.0.0] — 2026-06-22
 
 First versioned release. Establishes the provenance + upgrade mechanism, so every
