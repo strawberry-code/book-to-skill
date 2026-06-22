@@ -44,6 +44,7 @@ class MetadataInputs:
     generator_version: str
     source_sha256: str
     page_offset: int | None
+    figure_count: int
 
 
 def build_metadata(mi: MetadataInputs) -> dict[str, object]:
@@ -67,6 +68,8 @@ def build_metadata(mi: MetadataInputs) -> dict[str, object]:
         # Front-matter offset: subtract from a physical (form-feed) page index to get
         # the printed folio. ``null`` when undetectable → citations stay physical-labelled.
         "page_offset": mi.page_offset,
+        # Number of captioned figures captured (#8); 0 for text-mode/EPUB (no detection).
+        "figure_count": mi.figure_count,
         "source_file": str(Path(mi.input_path).resolve()),
         "filename": Path(mi.input_path).name,
         "format": mi.document_format,

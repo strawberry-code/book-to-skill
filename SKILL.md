@@ -563,6 +563,35 @@ in. Cap ~1,500 tokens total. Files:
 Every node/step must cite a chapter; if you cannot cite it, the book did not prescribe it —
 leave it out. Mark the whole directory clearly as a starting point, never as the book's code.
 
+### figures.md — captured diagrams *(layout-aware extraction only — see gate)*
+Technical books are diagram-heavy; pure-text extraction drops them. When the extractor
+captured figures it writes `figures.json` (a list of `{page, caption, kind}`) into the work
+dir. Turn each into a **described mental model** so the diagram's knowledge survives as text.
+
+**GATE.** Read `figures.json` from the work dir.
+- **Absent or empty** (text-mode/EPUB, or no detectable figures) → **do NOT create the file**;
+  add to the generated SKILL.md Scope & Limits: "No figures were captured (text-mode extraction
+  or no detectable figures); diagrams are not represented." Do not invent figures.
+- **Non-empty** → write `figures.md` (cap ~1,500 tokens).
+
+Format — a block per figure:
+```markdown
+# Figures — <skill_name>
+Diagrams captured from the book, each summarized as a described mental model.
+The caption is verbatim from the source; the summary is an interpretation, not a quote.
+
+### <caption verbatim from figures.json> [Ch N]
+<1–2 lines: what this diagram asserts / the relationship it shows — written from the caption
+and the surrounding chapter text you already read. Not quoted as the book.>
+```
+Rules:
+- **Caption verbatim** from `figures.json` — do not paraphrase it (it is the citable handle).
+- **Chapter**: parse the figure label when present (`Figure 3.1` / `Fig. 3-2` → `[Ch 3]`);
+  otherwise place it under the chapter whose page range contains the figure's `page`.
+- The summary is **your gloss** of what the diagram shows — never wrap it in quotes or present
+  it as book text. No image bytes, no ASCII recreation.
+- Skip a figure whose caption is too thin to summarize honestly rather than padding it.
+
 ---
 
 ## Step 8.5 — Grounding self-check (verify every quote)
@@ -645,6 +674,7 @@ argument-hint: [topic, framework name, chapter number, or "review <path>"]
 - **Review** — `review <path>`: audit a codebase against this book's rules *(only when review-rules.md exists)*
 - **In your stack** — ask for a concept "in Go / Spring / TypeScript"; I re-render the book's example in your language while citing the original *(only for code/technical books, feature #9)*
 - **Scaffold** — ask to "scaffold" / "set up the project"; I lay out the book's skeleton + build checklist from `templates/` *(only when templates/ exists, feature #4)*
+- **Figures** — ask "what does Figure N show?" / "the diagrams"; I read `figures.md`, the book's captured diagrams as described mental models *(only when figures.md exists, feature #8)*
 - **Browse** — ask "what chapters do you have?" to see the full index
 
 When you ask about a topic not covered in Core Frameworks below, I will read
@@ -723,6 +753,7 @@ Files scanned: <N> | Rules applied: <A> of <T>
 - [cues.md](cues.md) — activation cues: trigger → framework → chapter (read when a task matches a trigger)
 - [review-rules.md](review-rules.md) — codebase audit rules for `review <path>` *(include this line only when the file exists)*
 - [templates/](templates/) — project skeleton + build checklist to scaffold the book's approach *(include this line only when the directory exists, feature #4)*
+- [figures.md](figures.md) — the book's diagrams captured as described mental models *(include this line only when the file exists, feature #8)*
 
 ---
 
@@ -795,6 +826,11 @@ manifest = {
     "scaffolded": (skill_dir / "templates").is_dir(),
     "template_count": sum(1 for _ in (skill_dir / "templates").iterdir())
     if (skill_dir / "templates").is_dir() else 0,
+    # Feature #8: number of figure blocks in figures.md (0 when none captured).
+    "figures_captured": sum(
+        1 for line in (skill_dir / "figures.md").read_text().splitlines()
+        if line.startswith("### ")
+    ) if (skill_dir / "figures.md").is_file() else 0,
 }
 (skill_dir / ".book-to-skill.json").write_text(json.dumps(manifest, indent=2) + "\n")
 print("manifest written:", skill_dir / ".book-to-skill.json")
@@ -830,7 +866,9 @@ from pathlib import Path
 workdir = Path(os.environ.get("BOOK_SKILL_WORKDIR", Path(tempfile.gettempdir()) / "book_skill_work"))
 source_dir = Path(sys.argv[1]) / ".source"
 source_dir.mkdir(parents=True, exist_ok=True)
-for name in ("full_text.txt", "metadata.json"):
+# figures.json (feature #8) is archived too so figures.md can be regenerated without
+# re-running Docling; it is simply absent for text-mode/EPUB extractions.
+for name in ("full_text.txt", "metadata.json", "figures.json"):
     src = workdir / name
     if src.exists():
         shutil.copy2(src, source_dir / name)

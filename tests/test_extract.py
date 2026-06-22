@@ -136,6 +136,7 @@ _FIXED_META_KEYS = frozenset(
         "generator_version",
         "source_sha256",
         "page_offset",
+        "figure_count",
         "source_file",
         "filename",
         "format",
@@ -518,11 +519,13 @@ def test_build_metadata_is_pure():
         generator_version="1.0.0",
         source_sha256="deadbeef",
         page_offset=12,
+        figure_count=3,
     )
     meta = build_metadata(mi)
     assert meta["generator_version"] == "1.0.0"
     assert meta["source_sha256"] == "deadbeef"
     assert meta["page_offset"] == 12
+    assert meta["figure_count"] == 3
     assert meta["filename"] == "sample.pdf"
     assert meta["format"] == "pdf"
     assert meta["pages"] == 7

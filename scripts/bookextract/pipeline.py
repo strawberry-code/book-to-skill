@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from bookextract.formats import FormatSpec
-from bookextract.types import ExtractionMode, PageReporter
+from bookextract.types import ExtractionMode, Figure, PageReporter
 
 #: Per-strategy result. ``ok`` short-circuits the chain.
 Outcome = Literal["ok", "unavailable", "empty"]
@@ -29,10 +29,18 @@ class ChainResult:
     text: str | None
     method: str | None
     attempts: tuple[Attempt, ...]
+    #: Figures captured by the winning extractor (#8); empty for text-only strategies.
+    figures: tuple[Figure, ...] = ()
 
     @property
     def succeeded(self) -> bool:
         return self.text is not None
+
+
+def _pull_figures(extractor: object) -> tuple[Figure, ...]:
+    """Drain a winning extractor's captured figures, if it captures any."""
+    pop = getattr(extractor, "pop_figures", None)
+    return tuple(pop()) if callable(pop) else ()
 
 
 def run_chain(
@@ -65,6 +73,6 @@ def run_chain(
         text = extractor.extract(path, reporter)
         if text and text.strip():
             attempts.append(Attempt(extractor.name, "ok"))
-            return ChainResult(text, extractor.name, tuple(attempts))
+            return ChainResult(text, extractor.name, tuple(attempts), _pull_figures(extractor))
         attempts.append(Attempt(extractor.name, "empty"))
     return ChainResult(None, None, tuple(attempts))

@@ -34,7 +34,7 @@ from bookextract.pageoffset import detect_page_offset, remap_citations
 from bookextract.pipeline import Attempt, ChainResult, run_chain
 from bookextract.progress import page_progress
 from bookextract.structure import detect_structure
-from bookextract.types import ExtractionMode, set_debug
+from bookextract.types import ExtractionMode, Figure, set_debug
 from bookextract.upgrade import (
     MANIFEST_NAME,
     SOURCE_DIR_NAME,
@@ -237,6 +237,7 @@ def _finish(job: _Job, result: ChainResult) -> None:
     output_text = job.workdir / "full_text.txt"
     output_meta = job.workdir / "metadata.json"
     output_text.write_text(result.text, encoding="utf-8")
+    figure_count = _write_figures(job.workdir, result.figures)
 
     metadata = build_metadata(
         MetadataInputs(
@@ -253,10 +254,22 @@ def _finish(job: _Job, result: ChainResult) -> None:
             generator_version=__version__,
             source_sha256=_sha256(job.input_path),
             page_offset=detect_page_offset(result.text),
+            figure_count=figure_count,
         )
     )
     output_meta.write_text(json.dumps(metadata, indent=2, ensure_ascii=False))
     _print_summary(metadata, job)
+
+
+def _write_figures(workdir: Path, figures: tuple[Figure, ...]) -> int:
+    """Write captured figures (#8) to ``figures.json``; return how many. None → no file."""
+    if not figures:
+        return 0
+    payload = [{"page": f.page, "caption": f.caption, "kind": f.kind} for f in figures]
+    (workdir / "figures.json").write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+    return len(figures)
 
 
 def _print_summary(metadata: dict[str, object], job: _Job) -> None:
@@ -273,6 +286,9 @@ def _print_summary(metadata: dict[str, object], job: _Job) -> None:
     print(f"   Words   : {words:,}")
     print(f"   Tokens  : ~{tokens // _TOKENS_PER_K}K")
     print(f"   Chapters: {metadata['chapters_detected']} detected")
+    figures = cast(int, metadata["figure_count"])
+    if figures:
+        print(f"   Figures : {figures} captured")
     print(f"   ToC     : {'yes' if metadata['has_toc'] else 'not detected'}")
     if not metadata["has_toc"]:
         print(_NO_TOC_WARNING)

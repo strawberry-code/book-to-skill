@@ -26,6 +26,22 @@ re-runs only those — not the whole pipeline.
 
 ---
 
+## [1.6.0] — 2026-06-22
+
+### Added
+- Diagram/figure capture: layout-aware (Docling/technical) extraction now records each
+  **captioned** figure — caption + physical page + best-effort kind — into a `figures.json`
+  sidecar instead of discarding all non-text content, and the generator emits a `figures.md`
+  artifact summarizing each as a described mental model: `### <caption verbatim> [Ch N]` + a
+  1–2 line "what this diagram asserts" gloss. Caption is verbatim from the captured data; the
+  summary is the model's, never quoted as the book. No image bytes, no ASCII recreation —
+  the skill stays text-only. Gated: text-mode/EPUB or no detectable figures → no file, a Scope
+  & Limits note instead. Figures come from extraction, so an existing skill gains them by a
+  technical re-extract. (#8) [regenerate; steps 8 + re-extract for figures.json]
+- Figure capture infrastructure: `DoclingExtractor` walks the document model's `pictures`
+  (`caption_text` + provenance page), the chain surfaces them on `ChainResult.figures`, and the
+  extractor writes `figures.json` + a `figure_count` in `metadata.json`. [infra]
+
 ## [1.5.0] — 2026-06-22
 
 ### Added

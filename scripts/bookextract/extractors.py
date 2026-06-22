@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Final, Protocol, runtime_checkable
 from urllib.parse import unquote
 
-from bookextract.types import ExtractionMode, PageReporter, log_debug
+from bookextract.types import ExtractionMode, Figure, PageReporter, log_debug
 
 _PDFTOTEXT_TIMEOUT: Final[int] = 120
 _EBOOK_CONVERT_TIMEOUT: Final[int] = 300
@@ -302,11 +302,60 @@ class PdfminerExtractor(_BothModes):
             return None
 
 
+def _figure_page(picture: object) -> int:
+    """Physical page of a Docling figure from its first provenance item, else 0."""
+    prov = getattr(picture, "prov", None) or []
+    if prov:
+        return int(getattr(prov[0], "page_no", 0) or 0)
+    return 0
+
+
+def _figure_kind(picture: object) -> str | None:
+    """Best-effort figure classification from Docling annotations, else None."""
+    for annotation in getattr(picture, "annotations", None) or []:
+        classes = getattr(annotation, "predicted_classes", None) or []
+        if classes:
+            name = getattr(classes[0], "class_name", None)
+            if name:
+                return str(name)
+        kind = getattr(annotation, "kind", None)
+        if kind:
+            return str(kind)
+    return None
+
+
+def docling_figures(document: object) -> list[Figure]:
+    """Capture captioned figures from a Docling document model (#8).
+
+    Only figures with a non-empty caption are kept — the caption is the verbatim,
+    citable handle ``figures.md`` summarizes. Best-effort and defensive: any figure
+    that raises is skipped, never failing the surrounding extraction.
+    """
+    figures: list[Figure] = []
+    for picture in getattr(document, "pictures", None) or []:
+        try:
+            caption = picture.caption_text(document).strip()
+        except Exception as exc:  # noqa: BLE001 - docling caption resolution is backend-specific
+            log_debug(f"docling caption failed: {exc}")
+            continue
+        if caption:
+            figure = Figure(page=_figure_page(picture), caption=caption, kind=_figure_kind(picture))
+            figures.append(figure)
+    return figures
+
+
 class DoclingExtractor:
-    """Layout-aware extraction. Technical mode only (slow, table/code aware)."""
+    """Layout-aware extraction. Technical mode only (slow, table/code aware).
+
+    Beyond markdown text it captures captioned figures (#8) from the document model;
+    the pipeline pulls them via :meth:`pop_figures` after a winning extraction.
+    """
 
     name = "docling"
     modes: tuple[ExtractionMode, ...] = ("technical",)
+
+    def __init__(self) -> None:
+        self._figures: list[Figure] = []
 
     def available(self) -> bool:
         import importlib.util
@@ -320,10 +369,17 @@ class DoclingExtractor:
             return None
         try:
             document = converter.convert(path).document  # type: ignore[attr-defined]
-            return str(document.export_to_markdown())
+            markdown = str(document.export_to_markdown())
         except Exception as exc:  # noqa: BLE001 - docling surfaces backend-specific errors
             log_debug(f"docling extraction failed: {exc}")
             return None
+        self._figures = docling_figures(document)
+        return markdown
+
+    def pop_figures(self) -> list[Figure]:
+        """Return figures captured by the last ``extract`` and clear them."""
+        figures, self._figures = self._figures, []
+        return figures
 
     @staticmethod
     def _build_converter() -> object:

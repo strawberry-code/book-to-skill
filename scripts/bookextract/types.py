@@ -10,10 +10,26 @@ from __future__ import annotations
 
 import sys
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Final, Literal
 
 #: PDF extraction mode selected by ``--mode``.
 ExtractionMode = Literal["technical", "text"]
+
+
+@dataclass(frozen=True)
+class Figure:
+    """A diagram/figure captured from a layout-aware extraction (#8).
+
+    Only figures that carry a caption are recorded — the caption is the verbatim,
+    citable handle a generated ``figures.md`` summarizes. ``page`` is the physical
+    (Docling) page of the figure; ``kind`` is a best-effort classification from the
+    extractor's annotations, or ``None`` when unavailable.
+    """
+
+    page: int
+    caption: str
+    kind: str | None = None
 
 #: Callback an extractor may invoke to report progress, advancing by N units
 #: (pages). The CLI wires this to a progress bar; the core stays display-agnostic.
