@@ -26,6 +26,21 @@ re-runs only those — not the whole pipeline.
 
 ---
 
+## [1.5.0] — 2026-06-22
+
+### Added
+- Executable scaffolds: buildable technical-book skills emit a `templates/` directory —
+  `README.md` (what it scaffolds + a "starting point, not production" banner),
+  `structure.md` (the prescribed dir/file layout as an annotated tree, each node `[Ch N]`),
+  `checklist.md` (the book's build procedure as an ordered `- [ ]` list, each step `[Ch N]`),
+  and optional skeleton dirs with `.gitkeep` markers. Skeleton + checklist only — **no
+  runnable starter code** (it rots and can be subtly wrong); every node/step carries a
+  chapter citation or is left out. Gated on the book prescribing a concrete buildable
+  structure/method (conceptual/narrative books skip it). Derived from the captured chapters
+  — needs no source re-read; model-backed (no mechanical transform), so an existing skill
+  gains it by regeneration. Manifest records `scaffolded` + `template_count`.
+  (#4) [additive; new dir templates/]
+
 ## [1.4.0] — 2026-06-22
 
 ### Added

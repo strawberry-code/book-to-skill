@@ -533,6 +533,36 @@ Field rules:
 - **Citation honesty**: cite `[Ch N] "<verbatim anti-pattern name>"` only — the name must
   exist verbatim in `chapters/chNN-*.md`. **Never** attach a page or a fabricated quote to a rule.
 
+### templates/ — executable scaffold *(buildable technical books only — see gate)*
+This turns the skill from "things to read" into "things you run": a `templates/`
+directory holding the **project skeleton + build checklist** the book prescribes, so a
+user can scaffold the book's approach in seconds. Derived from the captured chapters /
+`patterns.md` / `cheatsheet.md` — it needs **no source re-read**.
+
+**GATE — decide whether to write this directory at all.** Only when the book describes a
+**concrete, reproducible structure or buildable procedure** — a project/file layout, a
+step-by-step method, a repeatable workflow (e.g. the hexagonal 3-module layout, a REST
+resource skeleton, a CI pipeline). Conceptual/narrative books (politics, economics,
+history) and reference books with no buildable structure → **do NOT create the directory**;
+add to the generated SKILL.md Scope & Limits: "This book prescribes no buildable structure;
+no `templates/` scaffold is generated."
+
+**Scope — skeleton + checklist only. Do NOT emit compilable/runnable starter code** (it
+rots and can be subtly wrong). Emit an annotated structure and a procedure the user fills
+in. Cap ~1,500 tokens total. Files:
+- `templates/README.md` — what this scaffolds, how to use it, and a one-line **"starting
+  point, not production — adapt and verify"** banner. Cite the chapters it implements `[Ch N]`.
+- `templates/structure.md` — the prescribed directory/file **layout as a tree**, every node
+  annotated with one line: what goes there + `[Ch N]` + why. No code bodies.
+- `templates/checklist.md` — the book's build procedure as an **ordered `- [ ]` checklist**,
+  each step carrying its `[Ch N]` citation. This is the runnable artifact even when no
+  skeleton dirs make sense (e.g. a methodology book).
+- skeleton directories (optional) named exactly as the book prescribes, each with a
+  `.gitkeep` and a leading comment line `# <what lives here> [Ch N]` — **no source files**.
+
+Every node/step must cite a chapter; if you cannot cite it, the book did not prescribe it —
+leave it out. Mark the whole directory clearly as a starting point, never as the book's code.
+
 ---
 
 ## Step 8.5 — Grounding self-check (verify every quote)
@@ -601,7 +631,8 @@ argument-hint: [topic, framework name, chapter number, or "review <path>"]
      into the sentence above so the agent's auto-discovery fires on matching work, not
      only on explicit questions. Keep them concrete (task/code/file situations).
      ARGUMENT-HINT: include "review <path>" ONLY when review-rules.md exists; include
-     "<topic> in <stack>" ONLY for code/technical books (feature #9). -->
+     "<topic> in <stack>" ONLY for code/technical books (feature #9); include "scaffold"
+     ONLY when templates/ exists (feature #4). -->
 
 # <Full Title>
 **Author**: <Author(s)> | **Pages**: ~<N> | **Chapters**: <N> | **Generated**: <YYYY-MM-DD> | **book-to-skill**: v<generator_version>
@@ -613,6 +644,7 @@ argument-hint: [topic, framework name, chapter number, or "review <path>"]
 - **With chapter** — ask for `ch05`; I load that specific chapter
 - **Review** — `review <path>`: audit a codebase against this book's rules *(only when review-rules.md exists)*
 - **In your stack** — ask for a concept "in Go / Spring / TypeScript"; I re-render the book's example in your language while citing the original *(only for code/technical books, feature #9)*
+- **Scaffold** — ask to "scaffold" / "set up the project"; I lay out the book's skeleton + build checklist from `templates/` *(only when templates/ exists, feature #4)*
 - **Browse** — ask "what chapters do you have?" to see the full index
 
 When you ask about a topic not covered in Core Frameworks below, I will read
@@ -690,6 +722,7 @@ Files scanned: <N> | Rules applied: <A> of <T>
 - [cheatsheet.md](cheatsheet.md) — quick reference tables and decision guides
 - [cues.md](cues.md) — activation cues: trigger → framework → chapter (read when a task matches a trigger)
 - [review-rules.md](review-rules.md) — codebase audit rules for `review <path>` *(include this line only when the file exists)*
+- [templates/](templates/) — project skeleton + build checklist to scaffold the book's approach *(include this line only when the directory exists, feature #4)*
 
 ---
 
@@ -758,6 +791,10 @@ manifest = {
     # Feature #9: whether this skill offers stack-personalized examples (code books only;
     # tracks the reviewable gate — a book worth review rules has code examples to re-render).
     "personalizable": (skill_dir / "review-rules.md").is_file(),
+    # Feature #4: whether a templates/ scaffold was written, and how many top-level entries.
+    "scaffolded": (skill_dir / "templates").is_dir(),
+    "template_count": sum(1 for _ in (skill_dir / "templates").iterdir())
+    if (skill_dir / "templates").is_dir() else 0,
 }
 (skill_dir / ".book-to-skill.json").write_text(json.dumps(manifest, indent=2) + "\n")
 print("manifest written:", skill_dir / ".book-to-skill.json")
