@@ -29,6 +29,7 @@ from bookextract.formats import (
     supported_formats_message,
 )
 from bookextract.metadata import MetadataInputs, build_metadata
+from bookextract.pageoffset import detect_page_offset, remap_citations
 from bookextract.pipeline import Attempt, ChainResult, run_chain
 from bookextract.progress import page_progress
 from bookextract.structure import detect_structure
@@ -37,6 +38,7 @@ from bookextract.upgrade import (
     MANIFEST_NAME,
     SOURCE_DIR_NAME,
     ApplyResult,
+    TransformFn,
     apply_plan,
     build_plan,
     render_plan,
@@ -249,6 +251,7 @@ def _finish(job: _Job, result: ChainResult) -> None:
             structure=detect_structure(result.text),
             generator_version=__version__,
             source_sha256=_sha256(job.input_path),
+            page_offset=detect_page_offset(result.text),
         )
     )
     output_meta.write_text(json.dumps(metadata, indent=2, ensure_ascii=False))
@@ -351,6 +354,80 @@ def _report_apply(result: ApplyResult) -> None:
         print("\nManifest bumped — skill fully upgraded.")
 
 
+# Skill files that may carry `[Ch N, p.PP]` grounding citations (chapters/*.md added
+# dynamically). Used by the #11 mechanical transform.
+_CITED_FILES: Final[tuple[str, ...]] = (
+    "SKILL.md",
+    "glossary.md",
+    "patterns.md",
+    "cheatsheet.md",
+    "cues.md",
+    "review-rules.md",
+)
+
+
+def _resolve_offset(source_dir: Path) -> int | None:
+    """Page offset for a skill: archived ``metadata.json`` if present, else detect from text.
+
+    Pre-#11 backfills wrote no ``page_offset`` key — fall back to detecting it from the
+    archived ``full_text.txt`` so old skills can still be remapped deterministically.
+    """
+    meta = source_dir / "metadata.json"
+    if meta.is_file():
+        data = json.loads(meta.read_text(encoding="utf-8"))
+        if "page_offset" in data:
+            value = data["page_offset"]
+            return value if isinstance(value, int) else None
+    text_path = source_dir / "full_text.txt"
+    if text_path.is_file():
+        return detect_page_offset(text_path.read_text(encoding="utf-8", errors="replace"))
+    return None
+
+
+def _remap_file(path: Path, offset: int | None) -> bool:
+    """Remap citations in one file in place; return whether it changed."""
+    if not path.is_file():
+        return False
+    original = path.read_text(encoding="utf-8")
+    updated, changed = remap_citations(original, offset)
+    if changed and updated != original:
+        path.write_text(updated, encoding="utf-8")
+        return True
+    return False
+
+
+def _record_offset(skill_dir: Path, offset: int | None) -> None:
+    """Persist the resolved offset into the skill manifest for self-documentation."""
+    manifest = skill_dir / MANIFEST_NAME
+    if not manifest.is_file():
+        return
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    data["page_offset"] = offset
+    manifest.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+def _page_offset_transform(skill_dir: Path, source_dir: Path) -> list[str]:
+    """#11 mechanical transform: remap physical-page citations to printed folios.
+
+    Resolves the front-matter offset deterministically, rewrites every ``[Ch N, p.PP]``
+    page across the skill's content files (printed folio when known, ``(pdf)`` label when
+    not), and records the offset in the manifest. No model, no source re-read.
+    """
+    offset = _resolve_offset(source_dir)
+    targets = [skill_dir / name for name in _CITED_FILES]
+    targets += sorted((skill_dir / "chapters").glob("*.md"))
+    changed = [
+        path.relative_to(skill_dir).as_posix() for path in targets if _remap_file(path, offset)
+    ]
+    _record_offset(skill_dir, offset)
+    return changed
+
+
+# Issue-number → mechanical transform. The upgrade flow applies these in place without
+# a model call (the payoff of the ``transform`` migration class).
+_UPGRADE_TRANSFORMS: Final[dict[str | None, TransformFn]] = {"11": _page_offset_transform}
+
+
 def run_upgrade(argv: list[str]) -> None:
     """Deterministic ``upgrade`` subcommand: plan the skill update, optionally apply it.
 
@@ -408,7 +485,7 @@ def run_upgrade(argv: list[str]) -> None:
     print(render_plan(plan))
     if args.dry_run or plan.is_noop:
         return
-    _report_apply(apply_plan(skill_dir, plan, __version__))
+    _report_apply(apply_plan(skill_dir, plan, __version__, _UPGRADE_TRANSFORMS))
 
 
 def _extract_to_workdir(req: _ExtractRequest) -> dict[str, object]:

@@ -43,6 +43,7 @@ class MetadataInputs:
     structure: dict[str, object]
     generator_version: str
     source_sha256: str
+    page_offset: int | None
 
 
 def build_metadata(mi: MetadataInputs) -> dict[str, object]:
@@ -63,6 +64,9 @@ def build_metadata(mi: MetadataInputs) -> dict[str, object]:
         # source bytes, so a generated skill's manifest can be checked for staleness.
         "generator_version": mi.generator_version,
         "source_sha256": mi.source_sha256,
+        # Front-matter offset: subtract from a physical (form-feed) page index to get
+        # the printed folio. ``null`` when undetectable → citations stay physical-labelled.
+        "page_offset": mi.page_offset,
         "source_file": str(Path(mi.input_path).resolve()),
         "filename": Path(mi.input_path).name,
         "format": mi.document_format,

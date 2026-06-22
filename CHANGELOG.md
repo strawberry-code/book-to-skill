@@ -26,6 +26,24 @@ re-runs only those — not the whole pipeline.
 
 ---
 
+## [1.3.0] — 2026-06-22
+
+### Added
+- Page-offset detection: the extractor records `page_offset` in `metadata.json` —
+  the front-matter length recovered deterministically from the extracted text by
+  anchoring on chapter-start pages that print their own folio (`physical_index −
+  folio`, accepted only on a non-negative majority of ≥3 agreeing anchors). `null`
+  when undetectable (Docling/EPUB, or no agreement). [infra]
+
+### Changed
+- Printed-folio citations: `[Ch N, p.PP]` page numbers are remapped from the physical
+  PDF page index (form-feed count, the #3 basis) to the **printed book folio** by
+  subtracting the detected `page_offset`; when the offset is undetectable the page is
+  labelled `p.PP (pdf)` so it is never mistaken for a printed folio. The remap is a
+  registered mechanical transform (no model, no source re-read) keyed on the archived
+  `.source/` — the first `transform`-class migration. EPUB/chapter-only citations are
+  unaffected. (#11) [transform; remap citations via detected offset]
+
 ## [1.2.0] — 2026-06-22
 
 ### Added

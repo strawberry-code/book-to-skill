@@ -293,14 +293,26 @@ extraction exposes.
 | `pdftotext`, `pdfminer` | **yes** — `\f` form-feeds delimit pages | text-mode PDF preserves page breaks |
 | `docling`, `pypdf`, `ebooklib`, DOCX/HTML/RTF/TXT/MD | **no** — use chapter ref only | markdown/joined output drops page boundaries |
 
-When pages are derivable, the page of a given line = (count of `\f` form-feeds before it) + 1:
+When pages are derivable, the **physical** page of a given line = (count of `\f`
+form-feeds before it) + 1. That physical index is offset from the **printed book
+folio** by the front matter; `metadata.json` carries `page_offset` (an int, or
+`null`) so you cite the folio a reader actually sees:
 ```bash
-# Find the line of an exact quote, then its page number:
+# Find the line of an exact quote, then its printed folio:
 LINE=$(awk -v q='EXACT VERBATIM QUOTE' 'index($0,q){print NR; exit}' "$FULL_TEXT_PATH")
-PAGE=$(head -n "$LINE" "$FULL_TEXT_PATH" | tr -cd '\f' | wc -c)
-echo "p.$((PAGE + 1))"
+PHYS=$(( $(head -n "$LINE" "$FULL_TEXT_PATH" | tr -cd '\f' | wc -c) + 1 ))
+META="$(dirname "$FULL_TEXT_PATH")/metadata.json"
+OFFSET=$(python3 -c "import json;print(json.load(open('$META')).get('page_offset'))")
+if [ "$OFFSET" = "None" ] || [ -z "$OFFSET" ]; then
+  echo "p.$PHYS (pdf)"          # offset undetectable → label the physical page honestly
+else
+  echo "p.$(( PHYS - OFFSET ))" # printed folio the reader sees
+fi
 ```
-When pages are **not** derivable, every citation is just `[Ch N] "quote"` — this is correct and expected (notably for `docling`/technical books); do not invent pages.
+- **`page_offset` is an int** → cite the printed folio `[Ch N, p.<phys − offset>]` (floored at 1).
+- **`page_offset` is `null`** but pages are derivable → cite `[Ch N, p.<phys> (pdf)]`; the `(pdf)` tag tells the reader it is a physical PDF index, not the printed folio. Never drop the tag.
+
+When pages are **not** derivable at all, every citation is just `[Ch N] "quote"` — this is correct and expected (notably for `docling`/technical books); do not invent pages.
 
 ---
 
@@ -710,6 +722,8 @@ manifest = {
     "source_filename": meta["filename"],
     "book_type": sys.argv[3],
     "extraction_method": meta["extraction_method"],
+    # Feature #11: front-matter offset (physical→printed folio). null when undetectable.
+    "page_offset": meta.get("page_offset"),
     "generated": __import__("datetime").date.today().isoformat(),
     # Steps that produced content from the source — drives selective regenerate on upgrade.
     "steps_run": [3, 5, 6, 7, 8, 8.5, 9],
