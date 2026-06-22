@@ -464,6 +464,63 @@ Rules:
 - Every major framework gets ≥1 cue; cover the frameworks already named in the chapters.
 - This file is derived from the captured frameworks — it needs no source re-read.
 
+### review-rules.md — codebase audit rules *(code-checkable books only — see gate)*
+This is what makes the skill an **active reviewer**: it lets `<skill> review <path>`
+audit a user's codebase against the book's rules, not just explain them. Derived from
+the captured `## Anti-patterns`, `cues.md` code/glob triggers, and `patterns.md` — it
+needs **no source re-read**.
+
+**GATE — decide whether to write this file at all.** Count the captured anti-patterns /
+cues that have a **concrete code/file/structural signal** a `grep` or glob could detect
+(e.g. "SQL built by string concatenation", "verb in a URI path", "domain class imports a
+framework type", "unquoted shell variable"). Vague/conceptual anti-patterns ("thinking in
+silos", "ignoring opportunity cost") do NOT count.
+- **≥3 concrete rules** → write `review-rules.md` (full).
+- **1–2** → write it with only those rules + a "partial coverage" note.
+- **0** (narrative / non-code books) → **do NOT create the file**; instead add to the
+  generated SKILL.md Scope & Limits: "This skill has no machine-checkable rule set;
+  `review <path>` is not supported for this book." (Do not gate on `book_type` — it is
+  unreliable for backfilled skills.)
+
+Format (cap ~2,000 tokens). A top index table, then one block per rule:
+```markdown
+# Review Rules — <skill_name>
+Audit a codebase against this book's rules; each is checkable by Read/Grep/Glob.
+Citations are chapter-level only (no per-rule page anchors); the quoted name after
+[Ch N] is the verbatim anti-pattern title from that chapter file.
+
+## Rules index
+| id | rule | severity | confidence | scope | source |
+|----|------|----------|------------|-------|--------|
+| SEC-SQLI-01 | SQL built by string concatenation | violation | high | server code | ch05 |
+
+## Rules
+
+### SEC-SQLI-01 — SQL query built by string concatenation
+- intent: user input must never be concatenated into SQL; use parameterized queries.
+- scope.glob: ["**/*.py","**/*.java","**/*.js","**/*.ts","**/*.go","**/*.rb","**/*.php"]
+- detect.grep:                       # broad ERE candidate-catchers (a hit is NOT yet a finding)
+  - '(SELECT|INSERT|UPDATE|DELETE)[^;]*"\s*\+\s*'
+  - 'f"[^"]*\b(SELECT|INSERT|UPDATE|DELETE)\b[^"]*\{'
+- detect.context: the interpolated token must be a variable/param, not a literal or a
+  validated allowlist constant. Confirm by Reading the hit line ±3.
+- detect.requires: ≥1 SQL-keyword signal AND ≥1 interpolation signal on the same statement.
+- severity: violation
+- confidence: high
+- exclude.glob: ["**/test*/**","**/*_test.*","**/*spec*","**/migrations/**","**/fixtures/**","**/examples/**","**/vendor/**","**/node_modules/**","**/generated/**"]
+- exclude.when: the interpolated value is a literal, an enum/allowlist constant, or a validated table/column name.
+- source: [Ch 5] "SQL injection"        # verbatim `- **bold name**:` from chapters/ch05-*.md
+- fix: use a parameterized query / prepared statement; bind user values, never build the string.
+```
+
+Field rules:
+- `severity`: MUST-rules / anti-patterns → `violation`; SHOULD / style → `suggestion`.
+- `confidence`: `high` only for unambiguous code signatures; `medium` for structural/heuristic rules (downgraded at review time).
+- `exclude.glob` ALWAYS includes tests, fixtures, examples, generated, migrations, vendored.
+- `id` = `PREFIX-TOPIC-NN` (PREFIX from the skill, e.g. SEC / REST / HEX / BASH).
+- **Citation honesty**: cite `[Ch N] "<verbatim anti-pattern name>"` only — the name must
+  exist verbatim in `chapters/chNN-*.md`. **Never** attach a page or a fabricated quote to a rule.
+
 ---
 
 ## Step 8.5 — Grounding self-check (verify every quote)
@@ -496,6 +553,19 @@ chapter ref. List by name any uncited item so the gap is visible.
 **3. Report** the coverage figure and the count of unverified quotes (must be 0
 before proceeding). Carry the coverage % into the Step 10 report.
 
+**4. Review-rules name check** *(only if `review-rules.md` was written)*. Each rule's
+`source: [Ch N] "<anti-pattern name>"` must name a chapter file that exists and a string
+found verbatim in it (or in `cues.md`). A name not found is a fabricated citation — fix
+the name or drop the rule. Must be 100% before proceeding.
+```bash
+grep -oE '\[Ch[^]]*\] *"[^"]+"' "$SKILLS_HOME/<skill_name>/review-rules.md" 2>/dev/null \
+  | grep -oE '"[^"]+"' | sed 's/^"//; s/"$//' | sort -u \
+  | while IFS= read -r q; do
+      grep -Frq "$q" "$SKILLS_HOME/<skill_name>/chapters" "$SKILLS_HOME/<skill_name>/cues.md" \
+        >/dev/null 2>&1 || echo "UNVERIFIED RULE CITATION: $q"
+    done
+```
+
 ---
 
 ## Step 9 — Generate the master SKILL.md
@@ -512,11 +582,13 @@ description: "Knowledge base from \"<Full Title>\" by <Author(s)>. Use when appl
 allowed-tools:
   - Read
   - Grep
-argument-hint: [topic, framework name, or chapter number]
+  - Glob   # include Glob ONLY when review-rules.md was written (feature #1, codebase audit); omit otherwise
+argument-hint: [topic, framework name, chapter number, or "review <path>"]
 ---
 <!-- DESCRIPTION TUNING (feature #2): fold the strongest trigger contexts from cues.md
      into the sentence above so the agent's auto-discovery fires on matching work, not
-     only on explicit questions. Keep them concrete (task/code/file situations). -->
+     only on explicit questions. Keep them concrete (task/code/file situations).
+     ARGUMENT-HINT: include "review <path>" ONLY when review-rules.md exists. -->
 
 # <Full Title>
 **Author**: <Author(s)> | **Pages**: ~<N> | **Chapters**: <N> | **Generated**: <YYYY-MM-DD> | **book-to-skill**: v<generator_version>
@@ -526,10 +598,48 @@ argument-hint: [topic, framework name, or chapter number]
 - **Without arguments** — load core frameworks for reference
 - **With a topic** — ask about `replication`, `pricing`, or another indexed topic; I find and read the relevant chapter
 - **With chapter** — ask for `ch05`; I load that specific chapter
+- **Review** — `review <path>`: audit a codebase against this book's rules *(only when review-rules.md exists)*
 - **Browse** — ask "what chapters do you have?" to see the full index
 
 When you ask about a topic not covered in Core Frameworks below, I will read
 the relevant chapter file before answering.
+
+<!-- REVIEWER SECTION (feature #1): include the block below ONLY when review-rules.md was
+     written. If it was not (non-code book), omit this block and instead add the
+     "no machine-checkable rule set" line to Scope & Limits. -->
+
+## Reviewing a codebase (`review <path>`)
+
+When asked to `review <path>` (or "audit / check this repo against the book"):
+
+1. **Load rules.** Read `review-rules.md`. If absent, say this skill has no machine-checkable rule set and stop.
+2. **Enumerate.** For each rule, resolve `scope.glob` against `<path>` with Glob; drop anything matching `exclude.glob` (tests, fixtures, examples, generated, migrations, vendored). Zero in-scope files → mark the rule *not applicable*, don't invent findings.
+3. **Find candidates.** Grep the rule's `detect.grep` patterns within its in-scope files. Collect `file:line` hits.
+4. **Confirm each hit** (this is where false positives die): Read the hit ±3 lines; apply `detect.context` (is it the dangerous *shape* — a variable not a literal, a path segment not a noun?), `exclude.when`, and `detect.requires`. Failing any → discard.
+5. **Classify.** *violation* only if `severity=violation` ∧ `confidence=high` ∧ requirements met ∧ not excluded. Otherwise *suggestion* (downgrade, don't drop). Prototype/one-off/script code in scope → downgrade. **When unsure, downgrade — never fabricate.**
+6. **Report** (format below): group by severity then rule; every finding carries `file:line`, rule id+name, the `[Ch N]` citation verbatim from the rule, and the one-line fix. Never emit a finding without a `file:line`.
+7. **Honesty footer.** List rules that were *not applicable* and any book guidance that isn't machine-checkable, so the user knows what was NOT audited. Never imply full coverage.
+
+Report format:
+```markdown
+# Conformance report — <path>
+Reviewed against: <skill_name> (<Book Title>)
+Files scanned: <N> | Rules applied: <A> of <T>
+
+## Violations
+### <RULE-ID> — <name>  [Ch N] "<anti-pattern name>"
+- <file>:<line>  `<offending code>`
+  Fix: <one-line remedy>
+
+## Suggestions
+### <RULE-ID> — <name>  [Ch N] "<name>"  (confidence: medium)
+- <file>:<line>  `<code>`
+  Fix: <remedy>
+
+## Not audited
+- Rules with no in-scope files: <ids>
+- Book guidance not machine-checkable: <topics>
+```
 
 ---
 
@@ -565,6 +675,7 @@ the relevant chapter file before answering.
 - [patterns.md](patterns.md) — all techniques and design patterns
 - [cheatsheet.md](cheatsheet.md) — quick reference tables and decision guides
 - [cues.md](cues.md) — activation cues: trigger → framework → chapter (read when a task matches a trigger)
+- [review-rules.md](review-rules.md) — codebase audit rules for `review <path>` *(include this line only when the file exists)*
 
 ---
 
@@ -573,6 +684,8 @@ the relevant chapter file before answering.
 This skill covers the book content only. For hands-on implementation in your codebase,
 combine with project-specific tools. For topics beyond this book, check related skills
 or ask the agent directly.
+<!-- If review-rules.md was NOT written (non-code book), add here:
+     "This skill has no machine-checkable rule set; `review <path>` is not supported for this book." -->
 ```
 
 ---
@@ -601,6 +714,12 @@ manifest = {
     # Steps that produced content from the source — drives selective regenerate on upgrade.
     "steps_run": [3, 5, 6, 7, 8, 8.5, 9],
     "artifacts": sorted(p.name for p in skill_dir.iterdir() if p.is_file()),
+    # Feature #1: whether a review-rules.md was written, and how many rules it holds.
+    "reviewable": (skill_dir / "review-rules.md").is_file(),
+    "review_rule_count": sum(
+        1 for line in (skill_dir / "review-rules.md").read_text().splitlines()
+        if line.startswith("### ")
+    ) if (skill_dir / "review-rules.md").is_file() else 0,
 }
 (skill_dir / ".book-to-skill.json").write_text(json.dumps(manifest, indent=2) + "\n")
 print("manifest written:", skill_dir / ".book-to-skill.json")

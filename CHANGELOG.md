@@ -26,6 +26,18 @@ re-runs only those — not the whole pipeline.
 
 ---
 
+## [1.2.0] — 2026-06-22
+
+### Added
+- Book-as-reviewer: code-checkable technical skills emit `review-rules.md` (per rule:
+  id, concrete grep/glob detection heuristic, severity, confidence, chapter citation,
+  fix) plus a `review <path>` procedure in SKILL.md that audits a codebase and emits a
+  cited conformance report (violation/suggestion, file:line, `[Ch N]`, fix). Rules carry
+  only chapter-level citations (the verbatim anti-pattern name, grep-verified — never a
+  fabricated page). Non-code books skip the file and mark it unsupported. Derived from
+  the already-captured anti-patterns/cues/patterns — needs no source re-read.
+  (#1) [additive; new file review-rules.md]
+
 ## [1.1.0] — 2026-06-22
 
 ### Added
