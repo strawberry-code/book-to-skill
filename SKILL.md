@@ -443,11 +443,14 @@ generating SKILL.md. This is the measurable quality gate for citations.
 file, confirm it exists in `full_text.txt`. A quote that does not match is a
 fabrication — fix it (re-quote from the source) or drop the item.
 ```bash
-# Extract every quoted snippet from the generated skill and check each one.
-# A line printed by this loop = a quote NOT found verbatim in the source → must fix.
-grep -rhoE '"[^"]{8,}"' "$SKILLS_HOME/<skill_name>/chapters" \
+# Check only quotes that are part of a grounding citation — i.e. the quoted string
+# that immediately follows a [Ch …] reference. Do NOT grep every "…" in the files:
+# chapters legitimately contain non-source quotes (slogans, UI examples, mnemonics)
+# that are not book passages and would be false-positive "failures".
+# A line printed by this loop = a cited quote NOT found verbatim in the source → must fix.
+grep -rhoE '\[Ch[^]]*\] *"[^"]+"' "$SKILLS_HOME/<skill_name>/chapters" \
      "$SKILLS_HOME/<skill_name>/patterns.md" "$SKILLS_HOME/<skill_name>/SKILL.md" 2>/dev/null \
-  | sed 's/^"//; s/"$//' | sort -u \
+  | grep -oE '"[^"]+"' | sed 's/^"//; s/"$//' | sort -u \
   | while IFS= read -r q; do
       grep -Fq "$q" "$FULL_TEXT_PATH" || echo "UNVERIFIED QUOTE: $q"
     done
