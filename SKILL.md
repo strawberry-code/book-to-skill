@@ -266,6 +266,39 @@ Then read the Table of Contents section if present to map all chapters.
 
 ---
 
+## Step 3.5 — Establish citation anchors (grounding)
+
+Every framework, principle, technique, and anti-pattern you capture must carry a
+**verifiable source**: a chapter ref (always) plus a page ref (when derivable)
+plus a short verbatim quote. Before generating, determine what anchors the
+extraction exposes.
+
+**Canonical citation format** — reuse this exact shape everywhere:
+```
+[Ch N, p.PP] "verbatim snippet from the book"
+```
+- **Chapter** is mandatory. Derive it from the chapter heading that encloses the item.
+- **`p.PP`** is included **only when derivable** (see below). Never fabricate a page number — omit `p.PP` rather than guess.
+- **Quote** is mandatory and must be verbatim (see Step 7 / Step 8.5 — every quote is grep-verified against `full_text.txt`). Keep it ≤ 25 words (fair-use sized).
+
+**Are page anchors derivable?** Read `extraction_method` from `metadata.json`:
+
+| `extraction_method` | Page anchors | Why |
+|---|---|---|
+| `pdftotext`, `pdfminer` | **yes** — `\f` form-feeds delimit pages | text-mode PDF preserves page breaks |
+| `docling`, `pypdf`, `ebooklib`, DOCX/HTML/RTF/TXT/MD | **no** — use chapter ref only | markdown/joined output drops page boundaries |
+
+When pages are derivable, the page of a given line = (count of `\f` form-feeds before it) + 1:
+```bash
+# Find the line of an exact quote, then its page number:
+LINE=$(awk -v q='EXACT VERBATIM QUOTE' 'index($0,q){print NR; exit}' "$FULL_TEXT_PATH")
+PAGE=$(head -n "$LINE" "$FULL_TEXT_PATH" | tr -cd '\f' | wc -c)
+echo "p.$((PAGE + 1))"
+```
+When pages are **not** derivable, every citation is just `[Ch N] "quote"` — this is correct and expected (notably for `docling`/technical books); do not invent pages.
+
+---
+
 ## Step 4 — Ask purpose (Full Conversion only)
 
 Before generating, ask the user:
@@ -324,6 +357,10 @@ Create `$SKILLS_HOME/<skill_name>/chapters/ch<NN>-<slug>.md` using the structure
 - `technical` → prioritize "Code Examples", "Reference Tables", and "Commands & APIs" sections; preserve exact syntax
 - `text` → prioritize "Frameworks Introduced", "Mental Models", and "Key Takeaways"; skip empty technical sections
 
+<!-- GROUNDING (Step 3.5): every Framework, Mental Model, and Anti-pattern carries a
+     `Source:` citation [Ch N, p.PP] "verbatim quote". The quote must exist in
+     full_text.txt verbatim (Step 8.5 verifies every one). Omit p.PP when not derivable. -->
+
 ```markdown
 # Chapter N: <Full Title>
 
@@ -334,16 +371,18 @@ Create `$SKILLS_HOME/<skill_name>/chapters/ch<NN>-<slug>.md` using the structure
 - **<Framework Name>**: <exact formulation — preserve the author's naming>
   - When to use: <specific situation>
   - How: <steps or criteria>
+  - Source: [Ch N, p.PP] "<verbatim quote naming/defining this framework>"
 
 ## Key Concepts
-- **<Term>**: <precise definition in 1 sentence>
+- **<Term>**: <precise definition in 1 sentence> [Ch N]
 (5–10 most important terms from this chapter)
 
 ## Mental Models
 <2–4 frameworks or thinking tools. Write as "Use X when Y" or "Think of X as Y">
+- Source: [Ch N, p.PP] "<verbatim quote>"
 
 ## Anti-patterns
-- **<What to avoid>**: <why it fails>
+- **<What to avoid>**: <why it fails> — Source: [Ch N, p.PP] "<verbatim quote>"
 
 ## Code Examples *(technical books only — omit if BOOK_TYPE=text)*
 <!-- Copy the most instructive snippet from the chapter. Preserve indentation exactly. -->
@@ -379,7 +418,7 @@ Create `$SKILLS_HOME/<skill_name>/glossary.md`:
 ### patterns.md
 Create `$SKILLS_HOME/<skill_name>/patterns.md`:
 - All concrete techniques, design patterns, algorithms from the book
-- Format: `## Pattern Name\n**When to use**: ...\n**How**: ...\n**Trade-offs**: ...`
+- Format: `## Pattern Name\n**When to use**: ...\n**How**: ...\n**Trade-offs**: ...\n**Source**: [Ch N, p.PP] "<verbatim quote>"`
 - Max 2,000 tokens
 
 ### cheatsheet.md
@@ -387,6 +426,35 @@ Create `$SKILLS_HOME/<skill_name>/cheatsheet.md`:
 - Decision tables, comparison matrices, quick-reference rules
 - The content you'd want on a single printed page
 - Max 1,000 tokens
+
+---
+
+## Step 8.5 — Grounding self-check (verify every quote)
+
+After chapter files and supporting files are written, verify the grounding before
+generating SKILL.md. This is the measurable quality gate for citations.
+
+**1. Verify every quote is verbatim.** For each `"quote"` emitted in any generated
+file, confirm it exists in `full_text.txt`. A quote that does not match is a
+fabrication — fix it (re-quote from the source) or drop the item.
+```bash
+# Extract every quoted snippet from the generated skill and check each one.
+# A line printed by this loop = a quote NOT found verbatim in the source → must fix.
+grep -rhoE '"[^"]{8,}"' "$SKILLS_HOME/<skill_name>/chapters" \
+     "$SKILLS_HOME/<skill_name>/patterns.md" "$SKILLS_HOME/<skill_name>/SKILL.md" 2>/dev/null \
+  | sed 's/^"//; s/"$//' | sort -u \
+  | while IFS= read -r q; do
+      grep -Fq "$q" "$FULL_TEXT_PATH" || echo "UNVERIFIED QUOTE: $q"
+    done
+```
+
+**2. Compute citation coverage.** Count captured items (Frameworks, Mental Models,
+Anti-patterns, patterns) and how many carry a `Source:`/`[Ch N]` ref. Coverage =
+cited / total. Target: **≥ 80%** of items cited; **every** framework has ≥ a
+chapter ref. List by name any uncited item so the gap is visible.
+
+**3. Report** the coverage figure and the count of unverified quotes (must be 0
+before proceeding). Carry the coverage % into the Step 10 report.
 
 ---
 
@@ -425,7 +493,10 @@ the relevant chapter file before answering.
 ## Core Frameworks & Mental Models
 <!-- ~2,000 tokens: the author's most important named frameworks and principles.
      Preserve exact names. Write as "Use X when Y", "Prefer X over Y because Z".
-     This is a toolkit, not a summary. -->
+     This is a toolkit, not a summary.
+     GROUNDING: each framework carries an inline [Ch N] ref and a short verbatim
+     quote so the headline toolkit is itself checkable. e.g.
+     - **The 5 Whys** — ask "why" five times to reach root cause. [Ch 3] "keep asking why until the root cause emerges" -->
 
 <generate 2,000 tokens of the most critical frameworks and insights here>
 
@@ -499,6 +570,8 @@ Files generated:
   ─────────────────────────────────────────────────────
   Total skill size: ~X tokens (loaded on-demand, not all at once)
 
+🔎 Citation coverage: ~NN% of items cited (chapter ref + verbatim quote) | unverified quotes: 0
+
 💡 Tip: check your agent's session cost/usage command to see actual token usage.
 
 Usage:
@@ -519,3 +592,4 @@ Usage:
 6. **Chapter files are on-demand** — they don't count against skill budget until loaded
 7. **Never copy raw book text** — always synthesize, summarize, extract signal
 8. **Topic index is critical** — it's how the agent navigates to the right chapter file
+9. **Ground every item** — each framework/principle/technique/anti-pattern carries `[Ch N, p.PP] "verbatim quote"`; chapter ref always, page only when derivable (never invent one), quotes verbatim and ≤25 words (fair-use); every quote is grep-verified against `full_text.txt` (Step 8.5)
