@@ -272,3 +272,58 @@ def test_cli_dry_run_prints_plan_without_mutating(tmp_path):
     assert proc.returncode == 0, proc.stderr
     assert "Upgrade plan:" in proc.stdout
     assert (skill / ".book-to-skill.json").read_text() == before, "dry-run mutated the manifest"
+
+
+def _run_cli(*args: str) -> subprocess.CompletedProcess:
+    script = _REPO / "scripts" / "extract.py"
+    return subprocess.run(
+        [sys.executable, str(script), "upgrade", *args],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+
+
+def test_cli_backfill_creates_manifest_and_source(tmp_path):
+    # A pre-provenance skill (no manifest) plus its original source.
+    skill = tmp_path / "preprov"
+    (skill / "chapters").mkdir(parents=True)
+    (skill / "chapters" / "ch01.md").write_text("# Chapter 1\nBody.\n")
+    source = tmp_path / "book.txt"
+    source.write_text("Chapter 1\nThe core idea is simple.\nChapter 2\nMore.\n")
+
+    proc = _run_cli(str(skill), "--backfill", "--source", str(source), "--pin", "0.0.0")
+    assert proc.returncode == 0, proc.stderr
+
+    manifest = json.loads((skill / ".book-to-skill.json").read_text())
+    assert manifest["generator_version"] == "0.0.0"
+    assert manifest["backfilled"] is True
+    assert len(manifest["source_sha256"]) == 64  # sha-256 hex
+    assert (skill / ".source" / "full_text.txt").is_file()
+    assert (skill / ".source" / "metadata.json").is_file()
+    # The archived hash must match the manifest, so verify_source passes.
+    src_meta = json.loads((skill / ".source" / "metadata.json").read_text())
+    assert src_meta["source_sha256"] == manifest["source_sha256"]
+
+
+def test_cli_backfill_refuses_existing_manifest_without_force(tmp_path):
+    skill = _make_skill(tmp_path, version="1.0.0")  # already has a manifest
+    source = tmp_path / "book.txt"
+    source.write_text("Chapter 1\nText.\n")
+    proc = _run_cli(str(skill), "--backfill", "--source", str(source))
+    assert proc.returncode != 0
+    assert "already has a manifest" in (proc.stderr + proc.stdout)
+
+
+def test_cli_backfill_then_plan_is_actionable(tmp_path):
+    skill = tmp_path / "preprov"
+    (skill / "chapters").mkdir(parents=True)
+    (skill / "chapters" / "ch01.md").write_text("# Chapter 1\nBody.\n")
+    source = tmp_path / "book.txt"
+    source.write_text("Chapter 1\nText.\nChapter 2\nMore.\n")
+    assert _run_cli(str(skill), "--backfill", "--source", str(source)).returncode == 0
+    # Pinned at 0.0.0, a real upgrade against the repo changelog must surface #3.
+    proc = _run_cli(str(skill), "--dry-run", "--changelog", str(_REPO / "CHANGELOG.md"))
+    assert proc.returncode == 0, proc.stderr
+    assert "regenerate" in proc.stdout
+    assert "(#3)" in proc.stdout

@@ -15,6 +15,7 @@ import shutil
 import sys
 import tempfile
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import Final, NoReturn, cast
 
@@ -31,7 +32,14 @@ from bookextract.pipeline import Attempt, ChainResult, run_chain
 from bookextract.progress import page_progress
 from bookextract.structure import detect_structure
 from bookextract.types import ExtractionMode, set_debug
-from bookextract.upgrade import ApplyResult, apply_plan, build_plan, render_plan
+from bookextract.upgrade import (
+    MANIFEST_NAME,
+    SOURCE_DIR_NAME,
+    ApplyResult,
+    apply_plan,
+    build_plan,
+    render_plan,
+)
 
 _DEFAULT_MODE: Final[ExtractionMode] = "text"
 _VALID_MODES: Final[frozenset[str]] = frozenset({"technical", "text"})
@@ -63,6 +71,17 @@ class _Job:
     mode: ExtractionMode
     workdir: Path
     count_value: int  # pages / spine_items / sections, computed once
+
+
+@dataclass(frozen=True)
+class _ExtractRequest:
+    """Inputs for one extraction run, grouped to keep ``_extract_to_workdir`` arity low."""
+
+    input_path: str
+    mode: str
+    install_mode: str
+    workdir: Path
+    debug: bool
 
 
 def resolve_workdir() -> Path:
@@ -349,11 +368,30 @@ def run_upgrade(argv: list[str]) -> None:
     parser.add_argument(
         "--changelog", default=None, help="override path to CHANGELOG.md (default: repo root)"
     )
+    parser.add_argument(
+        "--backfill",
+        action="store_true",
+        help="reconstruct provenance for a pre-provenance skill (requires --source)",
+    )
+    parser.add_argument("--source", default=None, help="original document path (with --backfill)")
+    parser.add_argument(
+        "--pin", default="0.0.0", help="version to pin the backfilled manifest at (default 0.0.0)"
+    )
+    parser.add_argument(
+        "--mode", default="text", help="extraction mode for --backfill: text|technical"
+    )
+    parser.add_argument(
+        "--force", action="store_true", help="overwrite an existing manifest on --backfill"
+    )
+    parser.add_argument("--debug", action="store_true", help="verbose extractor logging")
     args = parser.parse_args(argv)
 
     skill_dir = Path(args.skill_dir)
     if not skill_dir.is_dir():
         _die(f"Not a directory: {skill_dir}")
+    if args.backfill:
+        run_backfill(skill_dir, args)
+        return
     changelog = Path(args.changelog) if args.changelog else _default_changelog()
     if not changelog.is_file():
         _die(f"CHANGELOG not found: {changelog}", "pass --changelog <path>")
@@ -370,6 +408,85 @@ def run_upgrade(argv: list[str]) -> None:
     if args.dry_run or plan.is_noop:
         return
     _report_apply(apply_plan(skill_dir, plan, __version__))
+
+
+def _extract_to_workdir(req: _ExtractRequest) -> dict[str, object]:
+    """Run the extractor chain for ``req.input_path`` into ``req.workdir``; return its metadata.
+
+    Shared by ``main`` (default extract) and ``run_backfill`` (provenance reconstruction):
+    resolves the format, offers/declines optional deps per ``install_mode``, extracts, and
+    writes ``full_text.txt`` + ``metadata.json``. Exits non-zero on unsupported format or a
+    fully failed chain.
+    """
+    document_format, spec = _resolve_spec(req.input_path)
+    req.workdir.mkdir(parents=True, exist_ok=True)
+    coerced = _coerce_mode(req.mode)
+    _offer_dependencies(spec, coerced, req.install_mode)
+    _guard_calibre(spec)
+    print(f"Extracting {document_format.upper()}: {req.input_path}")
+    job = _Job(
+        spec, req.input_path, document_format, coerced, req.workdir,
+        spec.count_pages(req.input_path),
+    )
+    result = _extract(job, debug=req.debug)
+    _render_attempts(result.attempts)
+    if not result.succeeded:
+        _die(f"Could not extract text from {document_format.upper()}.", spec.install_hint)
+    _finish(job, result)
+    return cast("dict[str, object]", json.loads((req.workdir / "metadata.json").read_text()))
+
+
+def run_backfill(skill_dir: Path, args: argparse.Namespace) -> None:
+    """Reconstruct provenance for a pre-provenance skill: extract source → ``.source/`` + manifest.
+
+    Pre-provenance skills (generated before manifests existed) cannot be upgraded until
+    they carry a manifest and an archived extraction. This extracts the original document
+    into ``<skill>/.source/`` and writes ``.book-to-skill.json`` pinned at ``--pin`` (default
+    ``0.0.0``) so a subsequent ``upgrade`` sees every content feature as applicable.
+    """
+    if not args.source:
+        _die("--backfill requires --source <original document>")
+    source = Path(args.source)
+    if not source.is_file():
+        _die(f"Source not found: {source}")
+    manifest_path = skill_dir / MANIFEST_NAME
+    if manifest_path.exists() and not args.force:
+        _die(f"{skill_dir.name} already has a manifest.", "pass --force to overwrite")
+
+    tmp = Path(tempfile.mkdtemp(prefix="book_skill_backfill_"))
+    try:
+        meta = _extract_to_workdir(
+            _ExtractRequest(
+                input_path=str(source),
+                mode=args.mode,
+                install_mode="no",
+                workdir=tmp,
+                debug=args.debug,
+            )
+        )
+        source_dir = skill_dir / SOURCE_DIR_NAME
+        source_dir.mkdir(parents=True, exist_ok=True)
+        for name in ("full_text.txt", "metadata.json"):
+            shutil.copy2(tmp / name, source_dir / name)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    manifest = {
+        "generator_version": args.pin,
+        "source_sha256": meta["source_sha256"],
+        "source_filename": meta["filename"],
+        "book_type": "technical" if args.mode == "technical" else "text",
+        "extraction_method": meta["extraction_method"],
+        "generated": date.today().isoformat(),
+        "steps_run": [],
+        "artifacts": sorted(p.name for p in skill_dir.iterdir() if p.is_file()),
+        "backfilled": True,
+    }
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    print(
+        f"Backfilled {skill_dir.name}: manifest pinned v{args.pin}, "
+        f".source/ archived via {meta['extraction_method']}. Run 'upgrade' to apply features."
+    )
 
 
 def main() -> None:
@@ -392,23 +509,12 @@ def main() -> None:
     if not Path(args.input_path).exists():
         _die(f"File not found: {args.input_path}")
 
-    document_format, spec = _resolve_spec(args.input_path)
-    workdir = resolve_workdir()
-    workdir.mkdir(parents=True, exist_ok=True)
-    mode = _coerce_mode(args.mode)
-    _offer_dependencies(
-        spec, mode, normalize_install_mode(args.install_missing, args.no_install_missing)
+    _extract_to_workdir(
+        _ExtractRequest(
+            input_path=args.input_path,
+            mode=args.mode,
+            install_mode=normalize_install_mode(args.install_missing, args.no_install_missing),
+            workdir=resolve_workdir(),
+            debug=args.debug,
+        )
     )
-    _guard_calibre(spec)
-
-    print(f"Extracting {document_format.upper()}: {args.input_path}")
-    job = _Job(
-        spec, args.input_path, document_format, mode, workdir,
-        spec.count_pages(args.input_path),
-    )
-    result = _extract(job, debug=args.debug)
-    _render_attempts(result.attempts)
-    if not result.succeeded:
-        _die(f"Could not extract text from {document_format.upper()}.", spec.install_hint)
-
-    _finish(job, result)

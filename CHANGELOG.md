@@ -43,6 +43,10 @@ future change can be propagated to already-generated skills selectively.
   parses this changelog, computes the semver delta vs. the skill manifest, verifies
   the archived `.source/`, groups changes by class, applies registered mechanical
   transforms, and bumps the manifest only when nothing model-backed remains. (#10) [infra]
+- Provenance backfill: `extract.py upgrade <skill-dir> --backfill --source <doc> [--pin]`
+  reconstructs a pre-provenance skill — extracts the original document into `.source/`
+  and writes a manifest pinned at a baseline version so a later `upgrade` applies every
+  content feature. Enables upgrading skills generated before manifests existed. [infra]
 - Verifiable grounding: every framework/principle/technique/anti-pattern carries
   `[Ch N, p.PP] "verbatim quote"`; chapter ref always, page when derivable;
   Step 8.5 grep-verifies every quote and reports citation coverage. (#3)
