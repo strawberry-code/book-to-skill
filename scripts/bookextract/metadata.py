@@ -41,6 +41,8 @@ class MetadataInputs:
     output_text_path: str
     file_size_mb: float
     structure: dict[str, object]
+    generator_version: str
+    source_sha256: str
 
 
 def build_metadata(mi: MetadataInputs) -> dict[str, object]:
@@ -57,6 +59,10 @@ def build_metadata(mi: MetadataInputs) -> dict[str, object]:
     """
     tokens = estimate_tokens(mi.text)
     return {
+        # Provenance: pins each extraction to the generator version and the exact
+        # source bytes, so a generated skill's manifest can be checked for staleness.
+        "generator_version": mi.generator_version,
+        "source_sha256": mi.source_sha256,
         "source_file": str(Path(mi.input_path).resolve()),
         "filename": Path(mi.input_path).name,
         "format": mi.document_format,

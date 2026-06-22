@@ -51,6 +51,11 @@ Three paths available. Route based on what the user asks:
 **Action:** Skip Steps 0–3, use the provided analysis as input, run Steps 4–9
 **Output:** Skill files from the provided analysis
 
+### 4. Upgrade an Existing Skill
+**Trigger:** User runs `book-to-skill upgrade <skill-dir>`, or asks to bring a previously generated skill up to the current generator version
+**Action:** Run the Upgrade flow (see "Upgrading generated skills" below). Read the skill's `.book-to-skill.json` manifest, diff its `generator_version` against the current one via `CHANGELOG.md`, and apply only the changes that apply — re-running source-dependent steps over the skill's archived `.source/full_text.txt`.
+**Output:** The same skill, updated in place, with a bumped manifest. No re-extraction; source-dependent regeneration only for the steps that changed.
+
 ---
 
 ## Skill Locations
@@ -476,7 +481,7 @@ argument-hint: [topic, framework name, or chapter number]
 ---
 
 # <Full Title>
-**Author**: <Author(s)> | **Pages**: ~<N> | **Chapters**: <N> | **Generated**: <YYYY-MM-DD>
+**Author**: <Author(s)> | **Pages**: ~<N> | **Chapters**: <N> | **Generated**: <YYYY-MM-DD> | **book-to-skill**: v<generator_version>
 
 ## How to Use This Skill
 
@@ -533,7 +538,48 @@ or ask the agent directly.
 
 ---
 
+## Step 9.5 — Write the provenance manifest
+
+Write `$SKILLS_HOME/<skill_name>/.book-to-skill.json`. This is what the Upgrade
+flow reads to decide what is stale. Pull `generator_version` and `source_sha256`
+straight from the extraction's `metadata.json` (do not retype them):
+
+```bash
+META="$WORKDIR/metadata.json"   # the metadata.json produced by extract.py
+PYTHON_BIN="${PYTHON_BIN:-python3}"
+"$PYTHON_BIN" - "$META" "$SKILLS_HOME/<skill_name>" "<BOOK_TYPE>" <<'PY'
+import json, sys
+from pathlib import Path
+meta = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+skill_dir = Path(sys.argv[2])
+manifest = {
+    "generator_version": meta["generator_version"],
+    "source_sha256": meta["source_sha256"],
+    "source_filename": meta["filename"],
+    "book_type": sys.argv[3],
+    "extraction_method": meta["extraction_method"],
+    "generated": __import__("datetime").date.today().isoformat(),
+    # Steps that produced content from the source — drives selective regenerate on upgrade.
+    "steps_run": [3, 5, 6, 7, 8, 8.5, 9],
+    "artifacts": sorted(p.name for p in skill_dir.iterdir() if p.is_file()),
+}
+(skill_dir / ".book-to-skill.json").write_text(json.dumps(manifest, indent=2) + "\n")
+print("manifest written:", skill_dir / ".book-to-skill.json")
+PY
+```
+
+The manifest plus the archived `.source/` (Step 10) make the skill self-describing:
+which generator built it, from which exact bytes, and where the extraction lives
+so regeneration never re-reads the original document.
+
+---
+
 ## Step 10 — Cleanup and report
+
+**Persist the extraction first, then clean the workdir.** Copy `full_text.txt` +
+`metadata.json` into `$SKILLS_HOME/<skill_name>/.source/` so a future upgrade can
+regenerate source-dependent steps without re-running extraction (Docling is the
+slow part). `.source/` is not Markdown, so agents never load it as skill content.
 
 ```bash
 PYTHON_BIN="${PYTHON_BIN:-python3}"
@@ -541,15 +587,23 @@ if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
   PYTHON_BIN="python"
 fi
 
-"$PYTHON_BIN" - <<'PY'
+"$PYTHON_BIN" - "$SKILLS_HOME/<skill_name>" <<'PY'
 import os
 import shutil
+import sys
 import tempfile
 from pathlib import Path
-shutil.rmtree(
-    os.environ.get("BOOK_SKILL_WORKDIR", Path(tempfile.gettempdir()) / "book_skill_work"),
-    ignore_errors=True,
-)
+
+workdir = Path(os.environ.get("BOOK_SKILL_WORKDIR", Path(tempfile.gettempdir()) / "book_skill_work"))
+source_dir = Path(sys.argv[1]) / ".source"
+source_dir.mkdir(parents=True, exist_ok=True)
+for name in ("full_text.txt", "metadata.json"):
+    src = workdir / name
+    if src.exists():
+        shutil.copy2(src, source_dir / name)
+print("archived extraction to:", source_dir)
+
+shutil.rmtree(workdir, ignore_errors=True)
 PY
 ```
 
@@ -593,3 +647,61 @@ Usage:
 7. **Never copy raw book text** — always synthesize, summarize, extract signal
 8. **Topic index is critical** — it's how the agent navigates to the right chapter file
 9. **Ground every item** — each framework/principle/technique/anti-pattern carries `[Ch N, p.PP] "verbatim quote"`; chapter ref always, page only when derivable (never invent one), quotes verbatim and ≤25 words (fair-use); every quote is grep-verified against `full_text.txt` (Step 8.5)
+
+---
+
+## Upgrading generated skills (Mode 4)
+
+A generated skill is a **derived artifact** of `(source + generator version)`. When
+the generator gains features, existing skills go stale. This flow updates them
+**efficiently** (pay LLM-on-source only for what actually changed) and
+**effectively** (the manifest says exactly what is stale, so nothing is missed).
+
+### Migration classes
+Every `CHANGELOG.md` entry is tagged with how it must be applied:
+
+| Class | Meaning | How to apply on upgrade | Needs `.source/`? |
+|-------|---------|-------------------------|-------------------|
+| **additive** | new file derived from already-captured skill data | generate just the new artifact | usually no |
+| **transform** | rewrites an existing file, no new data from the book | rewrite in place | no |
+| **regenerate** | needs the book re-read (new data: quotes, figures, …) | re-run the listed steps over `.source/full_text.txt` | **yes** |
+
+### Upgrade procedure — `book-to-skill upgrade <skill-dir>`
+
+1. **Read the manifest.** Load `<skill-dir>/.book-to-skill.json`. Note its
+   `generator_version` (= the *from* version) and `source_sha256`. If missing,
+   the skill predates manifests → fall back to a full regenerate from the
+   original source (and ask the user to supply it).
+
+2. **Compute the delta.** Read this repo's `CHANGELOG.md`. Collect every entry
+   between the manifest's `generator_version` (exclusive) and the current
+   `__version__` (inclusive). If they are equal, report "already current" and stop.
+
+3. **Confirm `.source/` for regenerate-class changes.** If any delta entry is
+   `regenerate`, require `<skill-dir>/.source/full_text.txt`. If absent, ask the
+   user for the original document and re-extract once (Step 2) into `.source/`.
+
+4. **Apply in class order — cheapest first:**
+   - **additive** → create each new artifact from the existing skill files (and
+     `.source/full_text.txt` only if the entry says so). Never touch unrelated files.
+   - **transform** → rewrite only the named files in place.
+   - **regenerate** → re-run *only* the steps listed in the CHANGELOG entry (e.g.
+     `[regenerate; steps 7,8,9]`) against `.source/full_text.txt`. Do not re-run
+     the whole pipeline. Preserve the skill name, paths, and any user edits to
+     unaffected files.
+
+5. **Show a diff and confirm.** Before writing, summarize what will change
+   (files added / rewritten / regenerated) and get user approval. Upgrades are
+   re-runnable and idempotent.
+
+6. **Bump the manifest.** Set `generator_version` to the current version, refresh
+   `generated`, `artifacts`, and (if `.source/` was re-extracted) `source_sha256`.
+
+### Efficiency rules
+- **Never full-regenerate when the delta is only additive/transform.** That is the
+  whole point of the manifest + CHANGELOG classes.
+- **Never re-extract when `.source/full_text.txt` exists and `source_sha256` still
+  matches** — extraction is deterministic and already archived.
+- **Prefer additive features.** When a new capability can be a new file derived
+  from existing captured structure, the CHANGELOG should tag it `additive` so
+  upgrades cost almost nothing.

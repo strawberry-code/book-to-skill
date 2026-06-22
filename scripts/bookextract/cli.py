@@ -8,6 +8,7 @@ side-effect-isolated, which keeps the rest of the package testable.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -17,7 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final, NoReturn, cast
 
-from bookextract import deps
+from bookextract import __version__, deps
 from bookextract.deps import OfferContext, normalize_install_mode
 from bookextract.formats import (
     FormatSpec,
@@ -188,6 +189,19 @@ def _recorded_mode(spec: FormatSpec, requested: ExtractionMode, method: str) -> 
     return requested
 
 
+def _sha256(path: str) -> str:
+    """Hex SHA-256 of the source file, streamed so large books stay off-heap.
+
+    Recorded in metadata.json (and the skill manifest) so the upgrade flow can
+    confirm a skill is being regenerated from the same source bytes.
+    """
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as handle:
+        for block in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
 def _finish(job: _Job, result: ChainResult) -> None:
     """Write outputs and print the summary for a successful extraction.
 
@@ -212,6 +226,8 @@ def _finish(job: _Job, result: ChainResult) -> None:
             output_text_path=str(output_text),
             file_size_mb=Path(job.input_path).stat().st_size / _BYTES_PER_MB,
             structure=detect_structure(result.text),
+            generator_version=__version__,
+            source_sha256=_sha256(job.input_path),
         )
     )
     output_meta.write_text(json.dumps(metadata, indent=2, ensure_ascii=False))
