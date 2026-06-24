@@ -28,8 +28,13 @@ re-runs only those — not the whole pipeline.
 
 ## [Unreleased]
 
-Repository / tooling changes only — these do **not** alter generated skills, so they
-carry no migration class and `book-to-skill upgrade` ignores them.
+<!-- Next release. Entries go here, each tagged with its migration class. -->
+
+## [1.6.1] — 2026-06-24
+
+Repository / packaging / docs release. Every entry is `[infra]` (generator-only): it does
+**not** alter generated skill content, so `book-to-skill upgrade` applies nothing to existing
+skills — they remain current.
 
 ### Added
 - **`uv`-installable package.** `pyproject.toml` gained a `[project]` table, a `hatchling`
@@ -37,20 +42,25 @@ carry no migration class and `book-to-skill upgrade` ignores them.
   `docling`, `rich`, `all`, `dev`). `uv sync` now works and a `book-extract` console script
   exposes the extractor/upgrader (`bookextract.cli:main`). The version stays sourced from
   `scripts/bookextract/__init__.py`. The install-free `/book-to-skill` slash command and the
-  direct `python3 scripts/extract.py` path are unchanged.
+  direct `python3 scripts/extract.py` path are unchanged. [infra]
 - **GitHub Actions CI** (`.github/workflows/ci.yml`): `uv sync` + the quality gate
-  (pytest · ruff · mypy required; lizard · xenon informational) on Python 3.10–3.12.
-- **`ROADMAP.md`** anchored to the real version line (1.6.0 → 1.7.0) and the open issues.
-- **`RELEASE.md`** with a release checklist.
-- README: a "Strawberry Code edition" / "Differences from upstream" section, `uv`
-  Installation & Usage, an end-to-end "Example workflow", and a "Copyright and source
-  material" safety section.
+  (pytest · ruff · mypy required; lizard · xenon informational) on Python 3.10–3.12. [infra]
+- **Public, copyright-safe demo** under `examples/`: an original CC0 guide
+  (`demo-input/mini-python-code-review-guide.md`) and the full skill generated from it
+  (`demo-output/python-code-review-skill/` — SKILL.md, chapters, glossary/patterns/cheatsheet/
+  cues, a 5-rule `review-rules.md`, provenance manifest, and archived `.source/`). Built via the
+  real `book-extract`; every cited quote is grep-verified against `.source/full_text.txt`. (#14) [infra]
+- **`ROADMAP.md`** anchored to the real version line and the open issues, and **`RELEASE.md`**
+  with a release checklist. [infra]
+- README: a "Strawberry Code edition" / "Differences from upstream" section, `uv` Installation &
+  Usage, an end-to-end "Example workflow", a "Try the demo" pointer, and a "Copyright and source
+  material" safety section. [infra]
 
 ### Changed
 - `.gitignore` now excludes source material and derived artifacts (`.source/`, `*.pdf`,
   `*.epub`, `*.mobi`, `*.azw3`, `*.djvu`, `generated/`, `.local/`, `private-books/`,
-  `private-skills/`) to avoid accidentally committing copyrighted inputs or derived skills.
-  `uv.lock` is intentionally tracked.
+  `private-skills/`) to avoid accidentally committing copyrighted inputs or derived skills;
+  `uv.lock` is intentionally tracked, with an exception so the CC0 demo's `.source/` stays tracked. [infra]
 
 ## [1.6.0] — 2026-06-22
 
