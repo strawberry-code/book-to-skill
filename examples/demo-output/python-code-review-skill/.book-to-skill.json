@@ -1,0 +1,33 @@
+{
+  "generator_version": "1.6.0",
+  "source_sha256": "9781098cabdc1909fcdcb1494ddb4acde69dea8c06c726af639da5db65160e6b",
+  "source_filename": "mini-python-code-review-guide.md",
+  "book_type": "text",
+  "extraction_method": "plain-text",
+  "page_offset": null,
+  "generated": "2026-06-24",
+  "steps_run": [
+    3,
+    5,
+    6,
+    7,
+    8,
+    8.5,
+    9
+  ],
+  "artifacts": [
+    ".book-to-skill.json",
+    "SKILL.md",
+    "cheatsheet.md",
+    "cues.md",
+    "glossary.md",
+    "patterns.md",
+    "review-rules.md"
+  ],
+  "reviewable": true,
+  "review_rule_count": 5,
+  "personalizable": true,
+  "scaffolded": false,
+  "template_count": 0,
+  "figures_captured": 0
+}

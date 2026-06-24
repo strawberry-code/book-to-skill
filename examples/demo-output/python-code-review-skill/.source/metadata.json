@@ -1,0 +1,21 @@
+{
+  "generator_version": "1.6.0",
+  "source_sha256": "9781098cabdc1909fcdcb1494ddb4acde69dea8c06c726af639da5db65160e6b",
+  "page_offset": null,
+  "figure_count": 0,
+  "source_file": "examples/demo-input/mini-python-code-review-guide.md",
+  "filename": "mini-python-code-review-guide.md",
+  "format": "md",
+  "extraction_method": "plain-text",
+  "extraction_mode": "text",
+  "file_size_mb": 0.01,
+  "sections": 0,
+  "chars": 6669,
+  "words": 1103,
+  "estimated_tokens": 1470,
+  "estimated_tokens_human": "~1K",
+  "output_text": ".source/full_text.txt",
+  "chapters_detected": 0,
+  "chapter_headings_sample": [],
+  "has_toc": false
+}

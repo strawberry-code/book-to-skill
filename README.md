@@ -368,10 +368,17 @@ End-to-end, from a document to a skill you use while coding:
    - review your code — `/my-book review ./src`
    - generate checklists / scaffold the approach — `/my-book scaffold`
 
-> **Public demo coming soon.** There is no checked-in sample input or generated skill yet — a
-> copyright-safe public demo is tracked in
-> [#14](https://github.com/strawberry-code/book-to-skill/issues/14). This repo ships **no**
-> copyrighted book excerpts.
+### Try the demo
+
+A complete, copyright-safe example ships in [`examples/`](examples/) — an original CC0 guide and the
+skill generated from it, so you can see the output without running anything:
+
+- **Input** — [`examples/demo-input/mini-python-code-review-guide.md`](examples/demo-input/mini-python-code-review-guide.md) (original, CC0).
+- **Output** — [`examples/demo-output/python-code-review-skill/`](examples/demo-output/python-code-review-skill/) — `SKILL.md`, chapters, `glossary`/`patterns`/`cheatsheet`/`cues`, 5 grep-checkable `review-rules.md`, a provenance manifest, and the archived `.source/`.
+- **Walkthrough** — [`examples/README.md`](examples/README.md): what it is, how to regenerate it, what to expect, and how an agent uses it.
+
+Every cited quote in the demo is grep-verified against its `.source/full_text.txt`. This repo ships
+**no** copyrighted book excerpts.
 
 ---
 
@@ -418,6 +425,7 @@ book-to-skill/
 │       ├── deps.py           # Optional-dependency discovery + install flow
 │       └── types.py          # Mode literal, Figure, legal method names, error type, debug
 ├── tests/                    # 95 tests — extract · upgrade · pageoffset · personalize · figures · batch
+├── examples/                 # Copyright-safe demo: CC0 input + the skill generated from it
 ├── .claude/skills/
 │   └── shred-book/           # One-shot technical-PDF wrapper (delegates to book-to-skill)
 ├── docs/                     # Sphinx API docs (autodoc + Napoleon) → Read the Docs

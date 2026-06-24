@@ -20,6 +20,10 @@ build/
 # public redistribution.
 .source/
 generated/
+# Exception: the bundled demo is built from original CC0 content (see examples/),
+# so its provenance archive is intentionally tracked.
+!examples/**/.source/
+!examples/**/.source/**
 *.pdf
 *.epub
 *.mobi
