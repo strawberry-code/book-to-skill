@@ -5,3 +5,29 @@ __pycache__/
 .ruff_cache/
 .pytest_cache/
 docs/_build/
+
+# uv / virtualenv (uv.lock is intentionally tracked for reproducible installs)
+.venv/
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# Source material & generated artifacts — never commit copyrighted books, their
+# extracted full text, or skills derived from protected works (see README →
+# "Copyright and source material"). `.source/` is local provenance, not for
+# public redistribution.
+.source/
+generated/
+*.pdf
+*.epub
+*.mobi
+*.azw
+*.azw3
+*.djvu
+
+# Local-only scratch space for private books / skills you don't want tracked.
+.local/
+private-books/
+private-skills/

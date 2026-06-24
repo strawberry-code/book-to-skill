@@ -26,6 +26,32 @@ re-runs only those — not the whole pipeline.
 
 ---
 
+## [Unreleased]
+
+Repository / tooling changes only — these do **not** alter generated skills, so they
+carry no migration class and `book-to-skill upgrade` ignores them.
+
+### Added
+- **`uv`-installable package.** `pyproject.toml` gained a `[project]` table, a `hatchling`
+  build backend, and optional-dependency extras (`pdf`, `epub`, `docx`, `html`, `rtf`,
+  `docling`, `rich`, `all`, `dev`). `uv sync` now works and a `book-extract` console script
+  exposes the extractor/upgrader (`bookextract.cli:main`). The version stays sourced from
+  `scripts/bookextract/__init__.py`. The install-free `/book-to-skill` slash command and the
+  direct `python3 scripts/extract.py` path are unchanged.
+- **GitHub Actions CI** (`.github/workflows/ci.yml`): `uv sync` + the quality gate
+  (pytest · ruff · mypy required; lizard · xenon informational) on Python 3.10–3.12.
+- **`ROADMAP.md`** anchored to the real version line (1.6.0 → 1.7.0) and the open issues.
+- **`RELEASE.md`** with a release checklist.
+- README: a "Strawberry Code edition" / "Differences from upstream" section, `uv`
+  Installation & Usage, an end-to-end "Example workflow", and a "Copyright and source
+  material" safety section.
+
+### Changed
+- `.gitignore` now excludes source material and derived artifacts (`.source/`, `*.pdf`,
+  `*.epub`, `*.mobi`, `*.azw3`, `*.djvu`, `generated/`, `.local/`, `private-books/`,
+  `private-skills/`) to avoid accidentally committing copyrighted inputs or derived skills.
+  `uv.lock` is intentionally tracked.
+
 ## [1.6.0] — 2026-06-22
 
 ### Added

@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    name: quality gate (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+
+      # --extra pdf installs pypdf, which the strict mypy gate needs to resolve
+      # the optional-extractor adapter types (see CHANGELOG → Unreleased).
+      - name: Sync (dev + pdf)
+        run: uv sync --extra dev --extra pdf
+
+      # --- Required gates ---------------------------------------------------
+      - name: Tests
+        run: uv run pytest -q
+
+      - name: Lint (ruff)
+        run: uv run ruff check scripts/ tests/
+
+      - name: Types (mypy --strict)
+        run: uv run mypy
+
+      # --- Informational gates ----------------------------------------------
+      # Semantic-LOC (lizard) and complexity (xenon) currently report known
+      # threshold violations in a few cli.py helpers. They are reported but do
+      # not fail the build until that debt is paid down.
+      - name: Semantic-LOC (lizard, informational)
+        continue-on-error: true
+        run: uv run lizard scripts/bookextract -T nloc=25 -C 8 -a 4 --warnings_only
+
+      - name: Complexity (xenon, informational)
+        continue-on-error: true
+        run: uv run xenon --max-absolute B --max-average A scripts/bookextract
+
+      - name: Build wheel + sdist
+        run: uv build

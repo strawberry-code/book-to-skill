@@ -15,21 +15,74 @@
   <img src="https://img.shields.io/badge/Claude_Code-Skill-blueviolet?style=for-the-badge" alt="Claude Code Skill">
   <img src="https://img.shields.io/badge/generator-v1.6.0-success?style=for-the-badge" alt="Generator v1.6.0">
   <img src="https://img.shields.io/badge/PDF%20%E2%80%A2%20EPUB%20%E2%80%A2%20DOCX%20%E2%80%A2%20MD%20%E2%80%A2%20HTML%20%E2%80%A2%20RTF%20%E2%80%A2%20MOBI-supported-green?style=for-the-badge" alt="Formats supported">
+  <img src="https://img.shields.io/badge/python-3.10+-blue?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.10+">
   <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="MIT License">
+</p>
+<p align="center">
+  <a href="https://github.com/strawberry-code/book-to-skill/actions/workflows/ci.yml"><img src="https://github.com/strawberry-code/book-to-skill/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
 </p>
 
 <p align="center">
+  <sub><strong>What</strong> a generator that turns one technical book/document into a Claude Code skill ·
+  <strong>For</strong> developers who want a book's frameworks usable while they code ·
+  <strong>Solves</strong> "I read it once and forgot it; Claude hallucinates its contents" ·
+  <strong>Generates</strong> a grounded, on-demand <code>SKILL.md</code> + chapters that reviews your code and scaffolds the book's approach ·
+  <strong>Try it</strong> → <a href="#-install">Install</a> · <a href="#-how-to">How&nbsp;to</a></sub>
+</p>
+
+<p align="center">
+  <a href="#-strawberry-code-edition">Strawberry Code edition</a> ·
   <a href="#-why">Why</a> ·
   <a href="#-what-a-generated-skill-can-do">What a skill can do</a> ·
   <a href="#-what-it-generates">What it generates</a> ·
   <a href="#-how-to">How to</a> ·
   <a href="#-requirements">Requirements</a> ·
-  <a href="#-provenance--upgrades">Provenance &amp; upgrades</a> ·
-  <a href="#-how-it-works">How it works</a> ·
+  <a href="#-installation">Installation</a> ·
+  <a href="#-usage-python-cli">Usage</a> ·
+  <a href="#-example-workflow">Example workflow</a> ·
+  <a href="#-copyright-and-source-material">Copyright</a> ·
+  <a href="#-provenance--upgrades">Provenance</a> ·
   <a href="#-faq">FAQ</a> ·
-  <a href="#-install">Install</a> ·
   <a href="#-development">Development</a>
 </p>
+
+---
+
+## 🍓 Strawberry Code edition
+
+This repository is a **fork** of [`virgiliojr94/book-to-skill`](https://github.com/virgiliojr94/book-to-skill).
+The Strawberry Code edition focuses on making `book-to-skill` **easier to install, run, test, and adopt**,
+while keeping its core goal: turning books and long technical documents into reusable agent skills.
+
+It prioritizes:
+
+- **Reproducible local execution** and a **`uv`-first developer workflow**.
+- A **clear generated-output structure** (see [What it generates](#-what-it-generates)).
+- **Provenance and upgradeability** — every skill is a reproducible, upgradable artifact
+  (see [Provenance &amp; upgrades](#-provenance--upgrades)).
+- **Safe handling of copyrighted source material** (see [Copyright](#-copyright-and-source-material)).
+- **Compatibility with agent-skill workflows** — the generated `SKILL.md` format is read by
+  Claude Code, and the open Agent Skills standard is also supported by GitHub Copilot CLI and Amp.
+
+### Differences from upstream
+
+Grounded in this fork's current state:
+
+- **`uv`-installable package** with a `book-extract` console script and optional-dependency extras
+  — `uv sync` works out of the box. *(this edition)*
+- **Provenance manifest + deterministic `upgrade` flow** (`.book-to-skill.json` + `.source/` archive),
+  so a skill can be re-checked and selectively re-generated as the tool gains features. *(this edition)*
+- **Diagram/figure capture** for technical extraction ([#8](https://github.com/strawberry-code/book-to-skill/issues/8))
+  and **printed page folios** in citations for text PDFs ([#11](https://github.com/strawberry-code/book-to-skill/issues/11)). *(this edition)*
+- **Capability gating** — review / personalize / scaffold / figures are unlocked only when the
+  book honestly supports them.
+- **Strict quality gate** (ruff · mypy · lizard · xenon) and **Sphinx API docs** on Read the Docs.
+- **GitHub Actions CI** running the gate on Python 3.10–3.12. *(this edition)*
+
+**Planned** (not yet implemented — see [`ROADMAP.md`](ROADMAP.md)): a public copyright-safe demo input +
+sample skill, generated-skill validation checks, broader inputs (papers / wikis / transcripts,
+[#7](https://github.com/strawberry-code/book-to-skill/issues/7)), and multi-book domain libraries
+([#6](https://github.com/strawberry-code/book-to-skill/issues/6)).
 
 ---
 
@@ -228,9 +281,11 @@ True for "I have 80 books and want to search across all of them." book-to-skill 
 
 ---
 
-## 📥 Install
+## 📥 Installation
 
-Paste into a Claude Code session:
+### As a Claude Code skill (recommended)
+
+The generator itself needs no Python install — paste into a Claude Code session:
 
 ```
 Install book-to-skill: https://raw.githubusercontent.com/strawberry-code/book-to-skill/master/SKILL.md
@@ -246,6 +301,96 @@ cp -r /tmp/book-to-skill/SKILL.md /tmp/book-to-skill/scripts ~/.claude/skills/bo
 
 Then: `/book-to-skill ~/path/to/your-book.pdf`
 
+### As a Python package (uv)
+
+For running or hacking on the **extractor/upgrader** directly (the `book-extract` CLI), use
+[`uv`](https://docs.astral.sh/uv/):
+
+```bash
+git clone https://github.com/strawberry-code/book-to-skill.git
+cd book-to-skill
+uv sync                     # base install — no heavy extractors
+```
+
+Extractors are **optional extras** — install only what your source formats need:
+
+```bash
+uv sync --extra pdf         # pypdf + pdfminer.six (text PDFs)
+uv sync --extra epub        # ebooklib + beautifulsoup4
+uv sync --extra docling     # Docling — technical PDFs (tables/code/figures); large download
+uv sync --extra all         # every extractor
+```
+
+> Plain text, Markdown, reStructuredText and AsciiDoc need no extra. `pdftotext` (poppler) and
+> Calibre's `ebook-convert` are system tools, not Python packages — see [Requirements](#-requirements).
+
+---
+
+## ▶️ Usage (Python CLI)
+
+> **Generating a skill is the `/book-to-skill` slash command** (Claude reads `SKILL.md`) — see
+> [How to](#-how-to). The `book-extract` CLI below does **not** generate skills; it does the two
+> deterministic, model-free steps: **text extraction** and **upgrading** an existing skill.
+
+```bash
+# Extract a document's text + metadata into the work dir
+# (default: $TMPDIR/book_skill_work; override with $BOOK_SKILL_WORKDIR).
+uv run book-extract path/to/book.pdf --mode technical   # Docling: tables/code/figures
+uv run book-extract path/to/book.pdf --mode text        # pdftotext chain: instant, page folios
+uv run book-extract path/to/book.pdf --debug            # show which extractor ran / why a fallback kicked in
+
+# Upgrade an already-generated skill (deterministic transforms only)
+uv run book-extract upgrade ~/.claude/skills/my-book --dry-run   # what's stale, and its migration class
+uv run book-extract upgrade ~/.claude/skills/my-book             # apply transforms; bump the manifest
+```
+
+The same commands work without `uv` via the direct entrypoint:
+`python3 scripts/extract.py path/to/book.pdf --mode technical`.
+
+---
+
+## 🎬 Example workflow
+
+End-to-end, from a document to a skill you use while coding:
+
+1. **Start from a source you own** — a local PDF/EPUB/DOCX/Markdown/… (only material you have the
+   right to process; see [Copyright](#-copyright-and-source-material)).
+2. **Generate the skill** — in Claude Code: `/book-to-skill ~/Downloads/designing-data-intensive-applications.pdf`.
+   It asks *technical or text-heavy?*, extracts, generates, and writes the skill.
+3. **Review the generated directory** at `~/.claude/skills/<slug>/` — `SKILL.md`, `chapters/`,
+   `glossary.md`, `patterns.md`, `cheatsheet.md`, plus `review-rules.md` / `figures.md` / `templates/`
+   when the book supports them, and `.book-to-skill.json` + `.source/` (see [What it generates](#-what-it-generates)).
+4. **Reference it from your agent** — the `SKILL.md` format is read by Claude Code, and by GitHub
+   Copilot CLI / Amp via the open Agent Skills standard (clone into `~/.copilot/skills/` for Copilot).
+5. **Use it while you work**:
+   - explain concepts — `/my-book replication`
+   - adapt examples to your stack — `/my-book "the Specification pattern in Go"`
+   - review your code — `/my-book review ./src`
+   - generate checklists / scaffold the approach — `/my-book scaffold`
+
+> **Public demo coming soon.** There is no checked-in sample input or generated skill yet — a
+> copyright-safe public demo is on the [roadmap](ROADMAP.md). _TODO: open a tracking issue for the
+> public demo input + sample skill._ This repo ships **no** copyrighted book excerpts.
+
+---
+
+## ⚖️ Copyright and source material
+
+**You are responsible for the material you process.** book-to-skill is a tool; it does not grant any
+rights to the books or documents you feed it.
+
+- Only process books/documents you **own**, have **permission** to use, or that are **public domain /
+  openly licensed**.
+- Generated skills may contain **derived material** (summaries, named frameworks, verbatim quotes used
+  as citations).
+- **Do not commit** copyrighted source files, extracted full text, or skills derived from protected
+  books to public repositories unless you have the legal right to do so. This repo's
+  [`.gitignore`](.gitignore) excludes common book formats, `generated/`, and `.source/` to help avoid
+  accidental commits.
+- **`.source/`** holds a local extraction archive for cheap, reproducible upgrades — it is **local
+  provenance, not for public redistribution**.
+- Using this tool **does not remove your responsibility** to comply with copyright and license terms.
+
 ---
 
 ## 📁 Repository structure
@@ -254,6 +399,8 @@ Then: `/book-to-skill ~/path/to/your-book.pdf`
 book-to-skill/
 ├── SKILL.md                  # The generator: step-by-step generation + upgrade instructions
 ├── CHANGELOG.md              # Versioned features, each tagged with its migration class
+├── ROADMAP.md                # Version-anchored roadmap (1.6.0 → 1.7.0 → multi-doc)
+├── RELEASE.md                # Release checklist
 ├── scripts/
 │   ├── extract.py            # Thin entrypoint (extract · upgrade · backfill subcommands)
 │   └── bookextract/          # Extraction package (functional core + imperative shell)
@@ -273,7 +420,8 @@ book-to-skill/
 ├── .claude/skills/
 │   └── shred-book/           # One-shot technical-PDF wrapper (delegates to book-to-skill)
 ├── docs/                     # Sphinx API docs (autodoc + Napoleon) → Read the Docs
-├── pyproject.toml            # ruff / mypy / pytest config (quality gate)
+├── .github/workflows/ci.yml  # uv sync + quality gate on Python 3.10–3.12
+├── pyproject.toml            # package metadata + extras + ruff / mypy / pytest config
 └── .pre-commit-config.yaml   # ruff + mypy + lizard + xenon + pytest hooks
 ```
 
@@ -281,24 +429,34 @@ book-to-skill/
 
 ## 🛠️ Development
 
-```bash
-python3 -m pytest tests/ -q                       # 95 tests; fixtures built in-process
-python3 scripts/extract.py --debug <file>         # see which extractor ran and why a fallback kicked in
-```
-
-**Quality gates** — the `bookextract` package holds a strict semantic-LOC / typing / complexity standard:
+Set up the dev toolchain with `uv` (`--extra pdf` installs `pypdf`, which the strict `mypy` gate
+needs to resolve the optional-extractor adapter types):
 
 ```bash
-pip3 install ruff mypy lizard xenon pre-commit
-pre-commit run --all-files                        # the whole gate
-
-ruff check scripts/ tests/                        # lint (blind-except & magic-number bans)
-mypy                                              # --strict type check
-lizard scripts/bookextract -T nloc=25 -C 8 -a 4 --warnings_only   # NLOC≤25, cyclomatic≤8, args≤4
-xenon --max-absolute B --max-average A scripts/bookextract        # complexity grade
+uv sync --extra dev --extra pdf
+uv run pytest -q                                  # 95 tests; fixtures built in-process
+uv run book-extract --debug <file>                # see which extractor ran and why a fallback kicked in
 ```
 
-Thresholds live in `pyproject.toml` and `.pre-commit-config.yaml`.
+**Quality gate** — the `bookextract` package holds a strict semantic-LOC / typing / complexity standard.
+`pytest`, `ruff` and `mypy` are **required**; `lizard` and `xenon` are currently **informational** (a few
+`cli.py` helpers exceed the thresholds — tracked debt, see [`CHANGELOG.md`](CHANGELOG.md)):
+
+```bash
+uv run ruff check scripts/ tests/                 # lint (blind-except & magic-number bans)   [required]
+uv run mypy                                       # --strict type check                       [required]
+uv run lizard scripts/bookextract -T nloc=25 -C 8 -a 4 --warnings_only   # NLOC≤25, CCN≤8, args≤4  [informational]
+uv run xenon --max-absolute B --max-average A scripts/bookextract        # complexity grade        [informational]
+
+uv run pre-commit install                         # optional: run the gate on every commit
+uv run pre-commit run --all-files
+```
+
+The same commands run without `uv` once the tools are on `PATH`
+(`pip3 install ruff mypy lizard xenon pre-commit`, then drop the `uv run` prefix). Thresholds live in
+`pyproject.toml` and `.pre-commit-config.yaml`; CI runs the gate on Python 3.10–3.12
+(`.github/workflows/ci.yml`). See [`RELEASE.md`](RELEASE.md) for cutting a release and
+[`ROADMAP.md`](ROADMAP.md) for what's next.
 
 **Docs** — API reference is generated from docstrings (Sphinx autodoc + Napoleon):
 

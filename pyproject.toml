@@ -1,8 +1,101 @@
-# Tooling configuration for book-to-skill.
+# Project + tooling configuration for book-to-skill.
 #
-# This project ships no installable package — scripts/extract.py is invoked
-# directly. This file only configures the quality gate (ruff, mypy, pytest) that
-# enforces the "semantic LOC" rules on the bookextract package.
+# `book-to-skill` is two things in one repo:
+#   1. The *generator* — `SKILL.md` + the `/book-to-skill` slash command. Claude
+#      reads these to turn a document into a Claude Code skill. This is the
+#      primary, install-free interface and is NOT a Python entry point.
+#   2. The *extractor/upgrader* — the `bookextract` package under `scripts/`,
+#      exposed as the `book-extract` console script. It extracts text from a
+#      document and upgrades already-generated skills.
+#
+# The [project] table below makes (2) installable with `uv`/pip. Runtime
+# extractors (docling, pypdf, ebooklib, …) stay OPTIONAL extras — the package
+# discovers and falls back across whatever is installed (see bookextract/deps.py),
+# so the base install pulls no heavy dependencies.
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "book-to-skill"
+description = "Turn any technical book or document into a Claude Code skill — study, reference, review your code, and scaffold from it."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE.md" }
+authors = [{ name = "strawberry-code" }]
+keywords = [
+    "agent-skills",
+    "claude-code",
+    "github-copilot",
+    "pdf-to-skill",
+    "knowledge-extraction",
+    "ai-coding-assistant",
+    "technical-books",
+    "long-context",
+    "rag-alternative",
+    "docling",
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Documentation",
+    "Topic :: Text Processing",
+]
+# The generator version is the single source of truth in
+# scripts/bookextract/__init__.py (__version__); hatch reads it below.
+dynamic = ["version"]
+# No required runtime dependencies: extractors are optional (see extras).
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/strawberry-code/book-to-skill"
+Repository = "https://github.com/strawberry-code/book-to-skill"
+Changelog = "https://github.com/strawberry-code/book-to-skill/blob/master/CHANGELOG.md"
+Issues = "https://github.com/strawberry-code/book-to-skill/issues"
+
+[project.scripts]
+# Extracts text + upgrades skills. Skill *generation* is the /book-to-skill
+# slash command, not this script.
+book-extract = "bookextract.cli:main"
+
+# Optional extractors, mirroring the import→pip map in bookextract/deps.py.
+# Install only what your source formats need, e.g. `uv sync --extra docling`.
+[project.optional-dependencies]
+pdf = ["pypdf", "pdfminer.six"]
+epub = ["ebooklib", "beautifulsoup4"]
+docx = ["python-docx"]
+html = ["beautifulsoup4"]
+rtf = ["striprtf"]
+docling = ["docling"]
+rich = ["rich"]
+all = [
+    "pypdf",
+    "pdfminer.six",
+    "ebooklib",
+    "beautifulsoup4",
+    "python-docx",
+    "striprtf",
+    "docling",
+    "rich",
+]
+# mypy is pinned <2: the package targets the 1.x strict checker; mypy 2.x
+# tightens `no-any-return`/`unused-ignore` and flags the optional-extractor
+# adapter boundaries that 1.x accepts.
+dev = ["ruff", "mypy>=1.19,<1.20", "pytest", "lizard", "xenon", "pre-commit"]
+
+[tool.hatch.version]
+path = "scripts/bookextract/__init__.py"
+# __version__ carries a `: Final[str]` annotation, which the default regex rejects.
+pattern = "__version__(?:\\s*:[^=]+)?\\s*=\\s*['\"](?P<version>[^'\"]+)['\"]"
+
+[tool.hatch.build.targets.wheel]
+# Package lives under scripts/; it imports as `bookextract`.
+packages = ["scripts/bookextract"]
 
 [tool.ruff]
 line-length = 100
