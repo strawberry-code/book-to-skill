@@ -32,7 +32,10 @@ Adoption & breadth (this release line):
 - **Propagate `templates/` to existing technical skills** generated before scaffolds existed.
   ([#12](https://github.com/strawberry-code/book-to-skill/issues/12))
 - A public, copyright-safe demo input + a published sample skill *(planned)*.
+  ([#14](https://github.com/strawberry-code/book-to-skill/issues/14))
 - Validation checks for generated skill folders (structure/manifest lint) *(planned)*.
+- Pay down the `cli.py` complexity debt so `lizard`/`xenon` can become required gates.
+  ([#13](https://github.com/strawberry-code/book-to-skill/issues/13))
 
 ## v1.8.0+ — multi-document
 

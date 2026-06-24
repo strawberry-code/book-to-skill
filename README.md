@@ -369,8 +369,9 @@ End-to-end, from a document to a skill you use while coding:
    - generate checklists / scaffold the approach — `/my-book scaffold`
 
 > **Public demo coming soon.** There is no checked-in sample input or generated skill yet — a
-> copyright-safe public demo is on the [roadmap](ROADMAP.md). _TODO: open a tracking issue for the
-> public demo input + sample skill._ This repo ships **no** copyrighted book excerpts.
+> copyright-safe public demo is tracked in
+> [#14](https://github.com/strawberry-code/book-to-skill/issues/14). This repo ships **no**
+> copyrighted book excerpts.
 
 ---
 
@@ -440,7 +441,8 @@ uv run book-extract --debug <file>                # see which extractor ran and 
 
 **Quality gate** — the `bookextract` package holds a strict semantic-LOC / typing / complexity standard.
 `pytest`, `ruff` and `mypy` are **required**; `lizard` and `xenon` are currently **informational** (a few
-`cli.py` helpers exceed the thresholds — tracked debt, see [`CHANGELOG.md`](CHANGELOG.md)):
+`cli.py` helpers exceed the thresholds — tracked debt,
+[#13](https://github.com/strawberry-code/book-to-skill/issues/13)):
 
 ```bash
 uv run ruff check scripts/ tests/                 # lint (blind-except & magic-number bans)   [required]
