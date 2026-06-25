@@ -30,6 +30,14 @@ re-runs only those — not the whole pipeline.
 
 <!-- Next release. Entries go here, each tagged with its migration class. -->
 
+### Changed
+- Description tuning (#2) now covers **all** high-frequency triggers from `cues.md`, not a
+  2–4 sample. The generated `SKILL.md` "Proactively recall when…" tail is the only activation
+  signal at discovery time (cues.md is not in the activation index), so every common user task
+  must be reflected there, phrased as the user would say it (symptom/action, not book jargon),
+  related triggers merged. Also aligns the `cues.md` Supporting-Files link to its canonical
+  short form. (#2) [transform; re-run the SKILL.md frontmatter generation — no source re-read]
+
 ## [1.7.0] — 2026-06-24
 
 Extraction-capability release. The single entry is `[infra]` (generator-only): it does **not**

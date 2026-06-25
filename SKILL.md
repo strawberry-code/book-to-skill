@@ -649,16 +649,20 @@ Create `$SKILLS_HOME/<skill_name>/SKILL.md`:
 ```markdown
 ---
 name: <skill_name>
-description: "Knowledge base from \"<Full Title>\" by <Author(s)>. Use when applying <author>'s frameworks for <key topics, 3–6 terms>, studying the book, or referencing its concepts. Proactively recall when working on <2–4 concrete trigger contexts from cues.md, e.g. 'REST adapters', 'retry/backoff', 'schema migrations'>."
+description: "Knowledge base from \"<Full Title>\" by <Author(s)>. Use when applying <author>'s frameworks for <key topics, 3–6 terms>, studying the book, or referencing its concepts. Proactively recall when <every common user task from cues.md that should fire this skill — phrase each as the user would say it (the symptom/action, NOT book jargon), merge related ones, most-frequent first; cover all the high-frequency triggers, not a 2–4 sample>."
 allowed-tools:
   - Read
   - Grep
   - Glob   # include Glob ONLY when review-rules.md was written (feature #1, codebase audit); omit otherwise
 argument-hint: [topic, framework name, chapter number, or "review <path>"]
 ---
-<!-- DESCRIPTION TUNING (feature #2): fold the strongest trigger contexts from cues.md
-     into the sentence above so the agent's auto-discovery fires on matching work, not
-     only on explicit questions. Keep them concrete (task/code/file situations).
+<!-- DESCRIPTION TUNING (feature #2): the "Proactively recall when…" tail is the ONLY
+     activation signal the agent sees at discovery time — cues.md is NOT in the activation
+     index, so a trigger that lives only in cues.md will never fire the skill. The tail must
+     therefore reflect EVERY high-frequency trigger from cues.md, each phrased as the user
+     would say it (the symptom/action, not book jargon). Merge related triggers into one
+     clause and lead with the most common so it stays readable; do NOT cap at a 2–4 sample —
+     coverage of all common tasks is the goal, not a fixed count.
      ARGUMENT-HINT: include "review <path>" ONLY when review-rules.md exists; include
      "<topic> in <stack>" ONLY for code/technical books (feature #9); include "scaffold"
      ONLY when templates/ exists (feature #4). -->
@@ -750,7 +754,7 @@ Files scanned: <N> | Rules applied: <A> of <T>
 - [glossary.md](glossary.md) — all key terms with definitions
 - [patterns.md](patterns.md) — all techniques and design patterns
 - [cheatsheet.md](cheatsheet.md) — quick reference tables and decision guides
-- [cues.md](cues.md) — activation cues: trigger → framework → chapter (read when a task matches a trigger)
+- [cues.md](cues.md) — activation cues: trigger → framework → chapter
 - [review-rules.md](review-rules.md) — codebase audit rules for `review <path>` *(include this line only when the file exists)*
 - [templates/](templates/) — project skeleton + build checklist to scaffold the book's approach *(include this line only when the directory exists, feature #4)*
 - [figures.md](figures.md) — the book's diagrams captured as described mental models *(include this line only when the file exists, feature #8)*
