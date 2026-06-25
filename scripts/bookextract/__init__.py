@@ -15,4 +15,4 @@ from __future__ import annotations
 
 from typing import Final
 
-__version__: Final[str] = "1.6.1"
+__version__: Final[str] = "1.7.0"

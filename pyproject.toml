@@ -71,6 +71,7 @@ epub = ["ebooklib", "beautifulsoup4"]
 docx = ["python-docx"]
 html = ["beautifulsoup4"]
 rtf = ["striprtf"]
+mobi = ["mobi"]
 docling = ["docling"]
 rich = ["rich"]
 all = [
@@ -80,6 +81,7 @@ all = [
     "beautifulsoup4",
     "python-docx",
     "striprtf",
+    "mobi",
     "docling",
     "rich",
 ]
@@ -138,7 +140,7 @@ files = ["scripts/bookextract"]
 # Optional third-party extractors ship without type stubs; treat them as Any
 # rather than failing the strict gate on missing imports.
 [[tool.mypy.overrides]]
-module = ["docling.*", "ebooklib.*", "ebooklib", "pdfminer.*", "striprtf.*", "bs4", "docx", "pypdf", "PyPDF2", "rich.*"]
+module = ["docling.*", "ebooklib.*", "ebooklib", "pdfminer.*", "striprtf.*", "bs4", "docx", "pypdf", "PyPDF2", "rich.*", "mobi", "mobi.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

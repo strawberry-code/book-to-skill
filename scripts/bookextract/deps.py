@@ -26,6 +26,7 @@ PYTHON_DEPENDENCIES: Final[dict[str, str]] = {
     "bs4": "beautifulsoup4",
     "docx": "python-docx",
     "striprtf": "striprtf",
+    "mobi": "mobi",
 }
 
 _INSTALL_TIMEOUT_SECONDS: Final[int] = 600
@@ -47,6 +48,7 @@ class OfferContext:
 
     mode: str
     has_pdftotext: bool
+    has_ebook_convert: bool = False
 
 
 @dataclass(frozen=True)

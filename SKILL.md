@@ -163,7 +163,7 @@ Use `--install-missing yes` to install missing Python packages without prompting
 - TXT/Markdown/reStructuredText/AsciiDoc → reads directly as text
 - HTML → uses BeautifulSoup4, then stdlib HTML fallback
 - RTF → uses striprtf, then a basic regex fallback
-- MOBI/AZW/AZW3 → uses Calibre `ebook-convert` when installed. Calibre is an external app, not a pip package, so the script reports how to install it if missing.
+- MOBI/AZW/AZW3 → uses Calibre `ebook-convert` when installed, else falls back to the pure-Python `mobi` package (`pip install mobi`). Calibre is an external app, not a pip package; if neither backend is present the script reports both install options.
 
 This creates:
 - `<tempdir>/book_skill_work/full_text.txt` — full extracted text

@@ -30,6 +30,20 @@ re-runs only those — not the whole pipeline.
 
 <!-- Next release. Entries go here, each tagged with its migration class. -->
 
+## [1.7.0] — 2026-06-24
+
+Extraction-capability release. The single entry is `[infra]` (generator-only): it does **not**
+alter generated skill content, so `book-to-skill upgrade` applies nothing to existing skills —
+they remain current. It only lets the extractor handle MOBI/AZW where it previously aborted.
+
+### Added
+- **Calibre-free MOBI/AZW/AZW3 extraction.** New `MobiPythonExtractor` strategy uses the
+  pure-Python `mobi` package (unpacks to HTML, flattened via the existing stdlib
+  `extract_html_content`, no BeautifulSoup needed) as a fallback after Calibre's
+  `ebook-convert`. The `ebook` format now offers to `pip install mobi` when `ebook-convert`
+  is absent, and the early guard only aborts when **both** backends are missing.
+  `extraction_method` records `mobi-python`; like Calibre output it carries no page anchors. [infra]
+
 ## [1.6.1] — 2026-06-24
 
 Repository / packaging / docs release. Every entry is `[infra]` (generator-only): it does

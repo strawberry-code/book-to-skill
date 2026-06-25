@@ -637,3 +637,68 @@ class EbookConvertExtractor(_BothModes):
                 return None
             text = out_path.read_text(encoding="utf-8", errors="replace")
         return text if text.strip() else None
+
+
+class MobiPythonExtractor(_BothModes):
+    """MOBI/AZW/AZW3 via the pure-Python ``mobi`` package (no Calibre needed).
+
+    Fallback for ``EbookConvertExtractor``: when ``ebook-convert`` is absent the
+    ``mobi`` library unpacks the ebook to HTML in a temp dir, which we flatten to
+    text through the same stdlib ``extract_html_content`` the HTML path uses (so
+    no BeautifulSoup dependency). Like Calibre output, the result has no page
+    boundaries, so the recorded ``extraction_method`` carries no page anchors.
+    """
+
+    name = "mobi-python"
+
+    def available(self) -> bool:
+        import importlib.util
+        import sys
+
+        if "mobi" in sys.modules:  # already imported (or injected) → importable
+            return True
+        try:
+            return importlib.util.find_spec("mobi") is not None
+        except (ImportError, ValueError):  # pragma: no cover - exotic import states
+            return False
+
+    def extract(self, path: str, reporter: PageReporter | None = None) -> str | None:
+        try:
+            import mobi
+        except ImportError:
+            return None
+        try:
+            tmpdir, filepath = mobi.extract(path)
+        except Exception as exc:  # noqa: BLE001 - mobi raises bare Exceptions on bad input
+            log_debug(f"mobi extraction failed: {exc}")
+            return None
+        try:
+            html_files = self._html_files(filepath, tmpdir)
+            parts = []
+            for html_file in html_files:
+                raw = read_text_file(str(html_file))
+                if raw is None:
+                    continue
+                text = extract_html_content(raw)
+                if text.strip():
+                    parts.append(text)
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+        if not parts:
+            return None
+        merged = re.sub(r"\n{3,}", "\n\n", "\n".join(parts))
+        return merged if merged.strip() else None
+
+    @staticmethod
+    def _html_files(filepath: str, tmpdir: str) -> list[Path]:
+        """Return the HTML payload(s) ``mobi.extract`` produced, in reading order.
+
+        ``mobi.extract`` returns the path to the converted book; for MOBI7 that is
+        a single ``book.html``, but tolerate variants by globbing the temp dir when
+        the returned path is not itself HTML.
+        """
+        suffix = Path(filepath).suffix.lower()
+        if suffix in {".html", ".htm", ".xhtml"}:
+            return [Path(filepath)]
+        found = sorted(Path(tmpdir).rglob("*.htm*"))
+        return found or [Path(filepath)]

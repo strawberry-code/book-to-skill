@@ -54,6 +54,7 @@ LEGAL_METHOD_NAMES: Final[frozenset[str]] = frozenset(
         "rtf-regex",
         "html-parser",
         "ebook-convert",
+        "mobi-python",
         "plain-text",
     }
 )

@@ -122,6 +122,10 @@ def _no_pdftotext(ctx: OfferContext) -> bool:
     return not ctx.has_pdftotext
 
 
+def _no_ebook_convert(ctx: OfferContext) -> bool:
+    return not ctx.has_ebook_convert
+
+
 # --------------------------------------------------------------------------- #
 # The format table
 # --------------------------------------------------------------------------- #
@@ -204,8 +208,19 @@ _SPECS: Final[tuple[FormatSpec, ...]] = (
     FormatSpec(
         name="ebook",
         extensions=_CALIBRE_EXTENSIONS,
-        extractors=(ex.EbookConvertExtractor(),),
-        install_hint="Install Calibre and ensure ebook-convert is on PATH.",
+        extractors=(ex.EbookConvertExtractor(), ex.MobiPythonExtractor()),
+        deps=(
+            DepOffer(
+                "MOBI/AZW extraction without Calibre",
+                ("mobi",),
+                "Calibre's ebook-convert command (if installed)",
+                applies=_no_ebook_convert,
+            ),
+        ),
+        install_hint=(
+            "Install Calibre (ebook-convert on PATH) or the pure-Python fallback:\n"
+            "  pip3 install mobi"
+        ),
     ),
 )
 

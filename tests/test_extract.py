@@ -569,6 +569,95 @@ def test_decide_install_via_imported_symbol():
     assert decide_install("no", is_tty=True, has_missing=True) is InstallDecision.USE_FALLBACK
 
 
+# --------------------------------------------------------------------------- #
+# MOBI/AZW: Calibre + pure-Python ``mobi`` fallback
+# --------------------------------------------------------------------------- #
+
+
+def _swap_module(name, replacement):
+    """Set ``sys.modules[name]`` to ``replacement``; return a restore callable."""
+    sentinel = object()
+    previous = sys.modules.get(name, sentinel)
+    sys.modules[name] = replacement
+
+    def restore():
+        if previous is sentinel:
+            sys.modules.pop(name, None)
+        else:
+            sys.modules[name] = previous
+
+    return restore
+
+
+def test_mobi_method_name_is_legal():
+    assert "mobi-python" in LEGAL_METHOD_NAMES
+
+
+def test_mobi_dependency_registered():
+    assert deps.PYTHON_DEPENDENCIES.get("mobi") == "mobi"
+
+
+def test_ebook_spec_has_calibre_then_mobi_fallback():
+    spec = spec_for_extension(".mobi")
+    assert spec is not None
+    # Calibre is preferred; the pure-Python fallback comes after it.
+    assert [e.name for e in spec.extractors] == ["ebook-convert", "mobi-python"]
+    for ext in (".azw", ".azw3"):
+        assert spec_for_extension(ext) is spec
+
+
+def test_mobi_dep_offer_only_when_no_ebook_convert():
+    spec = spec_for_extension(".mobi")
+    assert spec is not None
+    offer = next(o for o in spec.deps if o.module_names == ("mobi",))
+    assert offer.applies(deps.OfferContext("text", has_pdftotext=True, has_ebook_convert=False))
+    assert not offer.applies(
+        deps.OfferContext("text", has_pdftotext=True, has_ebook_convert=True)
+    )
+
+
+def test_mobi_python_extractor_flattens_html(tmp_path):
+    """A fake ``mobi`` module that unpacks to HTML drives the extractor end-to-end."""
+    book_dir = tmp_path / "mobiex"
+    book_dir.mkdir()
+    html_path = book_dir / "book.html"
+    html_path.write_text(
+        "<html><body><h1>Title</h1><p>GAMMA_BODY_TEXT</p>"
+        "<script>ignored()</script></body></html>",
+        encoding="utf-8",
+    )
+
+    class _FakeMobi:
+        @staticmethod
+        def extract(_path):
+            return str(book_dir), str(html_path)
+
+    restore = _swap_module("mobi", _FakeMobi())
+    try:
+        extractor = extractors.MobiPythonExtractor()
+        assert extractor.available() is True
+        text = extractor.extract(str(tmp_path / "whatever.mobi"))
+    finally:
+        restore()
+    assert text is not None
+    assert "GAMMA_BODY_TEXT" in text
+    assert "ignored" not in text  # <script> stripped by extract_html_content
+
+
+def test_mobi_python_extractor_handles_library_failure(tmp_path):
+    class _BoomMobi:
+        @staticmethod
+        def extract(_path):
+            raise RuntimeError("corrupt mobi")
+
+    restore = _swap_module("mobi", _BoomMobi())
+    try:
+        result = extractors.MobiPythonExtractor().extract(str(tmp_path / "x.mobi"))
+    finally:
+        restore()
+    assert result is None
+
+
 if __name__ == "__main__":
     import pytest
 

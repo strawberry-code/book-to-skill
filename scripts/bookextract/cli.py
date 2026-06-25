@@ -172,19 +172,35 @@ def _resolve_format(input_path: str) -> tuple[str, str]:
 
 def _offer_dependencies(spec: FormatSpec, mode: ExtractionMode, install_mode: str) -> None:
     """Run the applicable dependency offers for ``spec`` under the given modes."""
-    ctx = OfferContext(mode=mode, has_pdftotext=shutil.which("pdftotext") is not None)
+    ctx = OfferContext(
+        mode=mode,
+        has_pdftotext=shutil.which("pdftotext") is not None,
+        has_ebook_convert=shutil.which("ebook-convert") is not None,
+    )
     for offer in spec.deps:
         if offer.applies(ctx):
             deps.run_install_flow(offer, install_mode)
 
 
 def _guard_calibre(spec: FormatSpec) -> None:
-    """Exit early with guidance if a Calibre format needs ``ebook-convert``."""
-    if spec.name == "ebook" and shutil.which("ebook-convert") is None:
-        _die(
-            "MOBI/AZW/AZW3 extraction requires Calibre's ebook-convert command. "
-            "Install Calibre and ensure ebook-convert is on PATH, then rerun this command."
-        )
+    """Exit early if a MOBI/AZW format has neither extraction backend available.
+
+    Either Calibre's ``ebook-convert`` or the pure-Python ``mobi`` package works;
+    only bail when both are missing (after the dependency offer has run).
+    """
+    if spec.name != "ebook":
+        return
+    import importlib.util
+
+    if shutil.which("ebook-convert") is not None:
+        return
+    if importlib.util.find_spec("mobi") is not None:
+        return
+    _die(
+        "MOBI/AZW/AZW3 extraction needs either Calibre's ebook-convert command "
+        "or the 'mobi' Python package; neither is available.",
+        "install one, then rerun: Calibre (ebook-convert on PATH), or `pip3 install mobi`",
+    )
 
 
 def _render_attempts(attempts: tuple[Attempt, ...]) -> None:
