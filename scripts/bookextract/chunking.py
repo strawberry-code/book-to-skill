@@ -25,8 +25,16 @@ from bookextract.structure import _STRONG_HEADING, _numbered_heading_value
 
 # A bare book-section heading: "2 Algebraic Coding Theory" or "1.1 Communication Systems".
 _SECTION_HEADING: Final[re.Pattern[str]] = re.compile(r"^\s*(\d+)(?:\.\d+)*\s+[A-Z]")
+# Leading chapter/section marker, stripped to expose the title text for vetting.
+_LEADING_NUM: Final[re.Pattern[str]] = re.compile(
+    r"^\s*(?:(?:chapter|chapitre|capitolo|kapitel|cap[íi]tulo|ch)\.?\s*)?\d+(?:\.\d+)*[.)]?\s*",
+    re.IGNORECASE,
+)
 _MAX_LABEL_LEN: Final[int] = 70
 _MAX_SECTION_DIGITS: Final[int] = 3  # "12.4" ok; a 20-digit binary string is not a heading
+_MAX_CHAPTER_NO: Final[int] = 99  # a larger leading number is a page number, not a chapter
+_MIN_TITLE_WORD: Final[int] = 3  # "Es"/"IO" after a number is a formula, not a section title
+_MAX_TITLE_WORDS: Final[int] = 8  # more words is a numbered list item ("1. All code words…")
 _SENTENCE_TAIL: Final[str] = ".,;:"
 _DEFAULT_TARGET_WORDS: Final[int] = 8000
 _SNAP_LOOKAHEAD: Final[int] = 40  # lines scanned past the target for a blank-line boundary
@@ -45,26 +53,58 @@ class Chunk:
     words: int
 
 
+def _candidate_number(stripped: str) -> int | None:
+    """The chapter/section number if the line matches any heading pattern, else None."""
+    strong = _STRONG_HEADING.match(stripped)
+    if strong:
+        return int(strong.group(1) or strong.group(2))
+    numbered = _numbered_heading_value(stripped)
+    if numbered is not None:
+        return numbered
+    section = _SECTION_HEADING.match(stripped)
+    if section and len(section.group(1)) <= _MAX_SECTION_DIGITS:
+        return int(section.group(1))
+    return None
+
+
+def _is_title_like(stripped: str, after: str) -> bool:
+    """Reject prose, running page headers, and formula lines shaped like a heading.
+
+    ``after`` is the text following the leading number. A real section title is
+    short (few words), Title-cased, not ALL-CAPS (running headers), and its first
+    word is an alphabetic token without digits (``"G1,k+1"``/``"Es"`` are formulas,
+    not titles). A many-word title is a numbered list item ("1. All code words…").
+    A bare marker (``"Chapter 2"`` with no title) is accepted.
+    """
+    if len(stripped) > _MAX_LABEL_LEN or stripped[-1] in _SENTENCE_TAIL:
+        return False
+    if not after:
+        return True
+    if not after[0].isupper() or after.isupper():
+        return False  # lowercase prose, or an ALL-CAPS running header
+    words = after.split()
+    if len(words) > _MAX_TITLE_WORDS:
+        return False  # a sentence-length "title" is a numbered list item, not a heading
+    first = words[0]
+    return (
+        len(first) >= _MIN_TITLE_WORD
+        and any(c.isalpha() for c in first)
+        and not any(c.isdigit() for c in first)
+    )
+
+
 def _heading_at(line: str) -> tuple[int | None, str] | None:
     """Return ``(chapter_number, heading_text)`` if the line looks like a heading."""
     stripped = line.strip()
     if not stripped:
         return None
-    strong = _STRONG_HEADING.match(stripped)
-    if strong:
-        return int(strong.group(1) or strong.group(2)), stripped
-    numbered = _numbered_heading_value(stripped)
-    if numbered is not None:
-        return numbered, stripped
-    section = _SECTION_HEADING.match(stripped)
-    if (
-        section
-        and len(section.group(1)) <= _MAX_SECTION_DIGITS
-        and len(stripped) <= _MAX_LABEL_LEN
-        and stripped[-1] not in _SENTENCE_TAIL
-    ):
-        return int(section.group(1)), stripped
-    return None
+    number = _candidate_number(stripped)
+    if number is None or number > _MAX_CHAPTER_NO:
+        return None
+    after = _LEADING_NUM.sub("", stripped, count=1).strip()
+    if not _is_title_like(stripped, after):
+        return None
+    return number, stripped
 
 
 def _snap(lines: list[str], i: int, n: int) -> int:

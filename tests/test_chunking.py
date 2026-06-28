@@ -39,6 +39,51 @@ def test_binary_string_is_not_a_heading():
     assert chunk.chapter is None
 
 
+def test_multilevel_section_heading_with_hyphenated_title():
+    # Regression: a hyphenated title token must still register (isalpha() rejects '-').
+    text = "2.2.3 Parity-Check Matrix\n" + "\n".join(["body line here"] * 5)
+    chunk = chunk_sections(text, target_words=5)[0]
+    assert chunk.chapter == 2
+    assert "Parity-Check" in chunk.label
+
+
+def test_page_number_running_header_is_not_a_heading():
+    # "322 ACRONYMS" is a page-number + ALL-CAPS running header, not chapter 322.
+    text = "322 ACRONYMS\n" + "\n".join(["body line here"] * 5)
+    assert chunk_sections(text, target_words=5)[0].chapter is None
+
+
+def test_prose_starting_with_chapter_word_is_not_a_heading():
+    # "Chapter 2 presents…" is body prose (lowercase continuation), not a heading.
+    text = "Chapter 2 presents the classical algebraic coding approach to\n" + "\n".join(
+        ["body line here"] * 5
+    )
+    assert chunk_sections(text, target_words=5)[0].chapter is None
+
+
+def test_numbered_list_item_is_not_a_heading():
+    # "1. All code words … are removed from" is a list item (sentence), not a heading.
+    text = "1. All code words with the first component 0 are removed from\n" + "\n".join(
+        ["body line here"] * 5
+    )
+    assert chunk_sections(text, target_words=5)[0].chapter is None
+
+
+def test_a_six_word_title_still_registers():
+    # Guard the word cap doesn't reject legitimately longer real headings.
+    text = "3.2 Trellis Diagram and the Viterbi Algorithm\n" + "\n".join(["body line here"] * 5)
+    chunk = chunk_sections(text, target_words=5)[0]
+    assert chunk.chapter == 3
+    assert "Viterbi" in chunk.label
+
+
+def test_formula_line_starting_with_a_digit_is_not_a_heading():
+    # "1 G1,k+1 (D)" (a matrix entry) and "2 Es" (an energy term) are formulas, not titles.
+    for formula in ("1 G1,k+1 (D) G1,n (D)", "2 Es"):
+        text = formula + "\n" + "\n".join(["body line here"] * 5)
+        assert chunk_sections(text, target_words=5)[0].chapter is None
+
+
 def test_physical_page_at_counts_form_feeds():
     text = "a\nb\fc\nd"  # one form-feed inside line 2
     assert physical_page_at(text, 1) == 1
