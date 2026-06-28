@@ -39,6 +39,7 @@ from bookextract.okf_lint import DEFAULT_MIN_COVERAGE, format_report, lint_bundl
 from bookextract.pageoffset import detect_page_offset, remap_citations
 from bookextract.pipeline import Attempt, ChainResult, run_chain
 from bookextract.progress import page_progress
+from bookextract.runner import BuildConfig, CliResult, build_bundle, invoke_claude
 from bookextract.structure import detect_structure
 from bookextract.types import ExtractionMode, Figure, set_debug
 from bookextract.upgrade import (
@@ -803,6 +804,48 @@ def run_lint(argv: list[str]) -> None:
     sys.exit(0 if report.ok else 1)
 
 
+def run_build(argv: list[str]) -> None:
+    """``build`` subcommand: drive ``claude -p`` headlessly over a bundle's pending chunks.
+
+    Reads the ``build-plan`` outputs, calls Opus per pending chunk to emit Note JSON
+    into ``.mycelia/chunks/``, and advances the journal (resumable, idempotent — a
+    re-run only processes chunks not already done). Spends real API budget. Pass
+    ``--assemble`` to run :func:`run_assemble` afterwards.
+    """
+    parser = argparse.ArgumentParser(
+        prog="extract.py build",
+        description="Headlessly emit Note JSON per chunk via claude -p (spends API budget).",
+    )
+    parser.add_argument("bundle_dir", help="bundle directory initialised by build-plan")
+    parser.add_argument("--model", default="opus", help="model alias/name (default: opus)")
+    parser.add_argument("--max-chunks", type=int, default=None, help="process at most N chunks")
+    parser.add_argument("--timeout", type=int, default=600, help="per-chunk claude -p timeout (s)")
+    parser.add_argument("--assemble", action="store_true", help="run assemble after building")
+    args = parser.parse_args(argv)
+
+    cfg = BuildConfig(
+        bundle=Path(args.bundle_dir),
+        model=args.model,
+        max_chunks=args.max_chunks,
+        timeout=args.timeout,
+    )
+    if not (cfg.bundle / ".mycelia" / "plan.json").is_file():
+        _die(f"no .mycelia/plan.json in {cfg.bundle}", "run build-plan first")
+
+    def invoke(prompt: str) -> CliResult:
+        return invoke_claude(prompt, cfg.model, timeout=cfg.timeout)
+
+    summary = build_bundle(cfg, invoke)
+    print(
+        f"Built {summary.built} chunk(s), {summary.notes} note(s). "
+        f"Cost: ${summary.cost_usd:.4f}."
+    )
+    for chunk_id, error in summary.failed:
+        print(f"   FAIL chunk {chunk_id}: {error}")
+    if args.assemble and summary.built:
+        run_assemble([str(cfg.bundle)])
+
+
 def run_eval(argv: list[str]) -> None:
     """``eval`` subcommand: score a built bundle against a gold standard.
 
@@ -974,6 +1017,7 @@ _SUBCOMMANDS: Final[dict[str, Callable[[list[str]], None]]] = {
     "lint": run_lint,
     "build-plan": run_build_plan,
     "assemble": run_assemble,
+    "build": run_build,
     "eval": run_eval,
 }
 

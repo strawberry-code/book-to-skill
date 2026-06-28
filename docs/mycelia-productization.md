@@ -146,7 +146,12 @@ D2 embedding fork.
   drives `claude -p --model opus --output-format json` per pending chunk → `validate_note` → journal
   (resume/idempotent); in-session path stays as fallback on the same Note-JSON contract. *C2*
   prefix caching + concurrency cap + budget. *Success*: full book built unattended, lint green,
-  resumable after kill; a documented cost-per-book.
+  resumable after kill; a documented cost-per-book. **Status (C1 shipped & validated)**: real
+  headless runs on the *Coding Theory* book produced 18 and 35 notes for two chunks (lint green,
+  100% citation coverage) at ≈$0.92 and $1.12 → **~$1/chunk, ≈$18–20 for an 18-chunk book**.
+  On the BSC region (same gold as the manual baseline) headless recall was **83% vs 67% manual** —
+  more exhaustive, not just unattended. C2 (prefix-cache optimization, concurrency, budget cap) is
+  the remaining polish.
 - **Fase D — deep reconciliation & multi-book** *(gaps: fragmentation, single-book)*. *D1*
   multi-source assemble (cross-book citations on shared canonical notes). *D2* embedding
   reconciliation for semantic/cross-lingual synonyms — **deps fork** (local sentence-transformers /
