@@ -48,6 +48,30 @@
 
 ---
 
+## 🧬 Mycelia — the OKF vault emitter (new default)
+
+> **The project now emits an atomic, interlinked knowledge *vault* by default; the single-book *skill* flow below is the legacy path (still supported).**
+
+One skill per book doesn't scale to a *library*: every skill's description is injected into the agent's context each session, so hundreds of books mean a context ceiling and degraded skill selection. The substrate that scales is a **vault** — small interlinked Markdown notes + semantic retrieval.
+
+**[`MYCELIA.md`](MYCELIA.md)** is the new generation recipe. From the same mechanical extractor, it emits a self-contained **[OKF v0.1](https://okf.md/spec/)** bundle:
+
+- **Atomic notes** — one note per concept / framework / principle / entity / method / anti-pattern (Zettelkasten granularity), the file path *is* the concept's identity.
+- **OKF-native, portable** — standard Markdown bundle-relative links, reserved `index.md`/`log.md`, `type`-required frontmatter. Droppable on any filesystem; readable by any OKF-aware agent. No proprietary format, no wikilink lock-in.
+- **Cross-book convergence** — *apoptosis* from book A and book B become **one** canonical note with citations to both, via check-before-create reconciliation. This is the second-brain killer feature.
+- **Grounded** — every note cites its source verbatim (`[Ch N, p.PP] "quote"`) in a `# Citations` section, grep-verified against the archived immutable `raw/` extraction.
+- **Verifiable** — a stdlib `lint` subcommand enforces zero dangling links and OKF validity deterministically.
+
+```bash
+/mycelia ~/books/cell-biology.pdf cell-biology         # new vault from a book
+/mycelia ~/books/molecular-biology.pdf cell-biology    # ingest a 2nd book → shared concept notes
+book-extract lint ./cell-biology                       # OKF + zero-dangling check
+```
+
+See **[`MYCELIA.md`](MYCELIA.md)** for the full recipe and the bundle spec. A complete, copyright-safe sample vault generated from the CC0 demo guide ships in **[`examples/demo-output/mycelia-vault/`](examples/demo-output/mycelia-vault/)** — 13 atomic notes across all six note types, per-book MOC, OKF `index.md`/`log.md`, and `# Citations` grounded against the immutable `raw/`. It passes `book-extract lint` with zero dangling links. Converting old book-skills and existing Obsidian vaults to OKF is on the [roadmap](ROADMAP.md).
+
+---
+
 ## 🍓 Strawberry Code edition
 
 This repository is a **fork** of [`virgiliojr94/book-to-skill`](https://github.com/virgiliojr94/book-to-skill).

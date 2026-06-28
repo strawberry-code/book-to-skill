@@ -16,12 +16,14 @@ import shutil
 import sys
 import tempfile
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Final, NoReturn, cast
 
 from bookextract import __version__, deps
+from bookextract.assemble import AssembleInputs, Source, assemble
 from bookextract.batch import Match, match_sources
+from bookextract.chunking import chunk_sections
 from bookextract.deps import OfferContext, normalize_install_mode
 from bookextract.formats import (
     FormatSpec,
@@ -30,6 +32,8 @@ from bookextract.formats import (
     supported_formats_message,
 )
 from bookextract.metadata import MetadataInputs, build_metadata
+from bookextract.notes import Note, NoteValidationError, validate_note
+from bookextract.okf_lint import DEFAULT_MIN_COVERAGE, format_report, lint_bundle
 from bookextract.pageoffset import detect_page_offset, remap_citations
 from bookextract.pipeline import Attempt, ChainResult, run_chain
 from bookextract.progress import page_progress
@@ -748,6 +752,186 @@ def run_backfill_batch(argv: list[str]) -> None:
     print(f"\nBackfilled {done} | failed {len(failed)}: {failed}")
 
 
+def run_lint(argv: list[str]) -> None:
+    """Deterministic ``lint`` subcommand: validate an OKF bundle and exit by severity.
+
+    Parses the bundle directory, runs :func:`~bookextract.okf_lint.lint_bundle`, prints
+    the formatted report, and exits non-zero when there are error-level findings. Dangling
+    links are errors by default; ``--allow-dangling`` downgrades them to warnings (OKF
+    tolerates broken links, but zero-dangling is this project's default success criterion).
+    ``--min-coverage`` sets the citation-coverage floor for atomic notes; ``--strict``
+    promotes missing reciprocal ``## Related`` backlinks from warnings to errors.
+    """
+    parser = argparse.ArgumentParser(
+        prog="extract.py lint",
+        description="Validate an OKF v0.1 knowledge bundle (frontmatter, reserved files, links).",
+    )
+    parser.add_argument("bundle_dir", help="path to the OKF bundle directory")
+    parser.add_argument(
+        "--allow-dangling",
+        action="store_true",
+        help="report dangling links as warnings instead of errors",
+    )
+    parser.add_argument(
+        "--min-coverage",
+        type=float,
+        default=DEFAULT_MIN_COVERAGE,
+        metavar="FRACTION",
+        help="minimum share of atomic notes that must carry a chapter-ref citation "
+        f"(default {DEFAULT_MIN_COVERAGE}); below it is an error",
+    )
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="treat missing reciprocal '## Related' links as errors instead of warnings",
+    )
+    args = parser.parse_args(argv)
+
+    bundle_dir = Path(args.bundle_dir)
+    if not bundle_dir.is_dir():
+        _die(f"Not a directory: {bundle_dir}")
+
+    report = lint_bundle(
+        bundle_dir,
+        allow_dangling=args.allow_dangling,
+        min_coverage=args.min_coverage,
+        strict_links=args.strict,
+    )
+    print(format_report(report))
+    sys.exit(0 if report.ok else 1)
+
+
+def _slugify(value: str) -> str:
+    """Lowercase kebab-case slug from an arbitrary filename stem."""
+    slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
+    return slug or "source"
+
+
+def run_build_plan(argv: list[str]) -> None:
+    """``build-plan`` subcommand: chunk an extraction into an orchestrated-build plan.
+
+    Reads ``full_text.txt`` + ``metadata.json`` from the extraction dir, archives them
+    into the bundle's ``raw/<slug>/``, and writes ``.mycelia/{plan,journal,source}.json``.
+    The agent then fills ``source.json`` (title/authors), emits one Note-JSON file per
+    chunk under ``.mycelia/chunks/``, and runs ``assemble``.
+    """
+    parser = argparse.ArgumentParser(
+        prog="extract.py build-plan",
+        description="Chunk an extracted document into an orchestrated-build plan.",
+    )
+    parser.add_argument("raw_dir", help="directory containing full_text.txt + metadata.json")
+    parser.add_argument("--out", required=True, help="bundle directory to initialise")
+    parser.add_argument("--slug", help="source slug (default: derived from the filename)")
+    parser.add_argument("--target-words", type=int, default=8000, metavar="N")
+    args = parser.parse_args(argv)
+
+    raw_dir = Path(args.raw_dir)
+    text_path, meta_path = raw_dir / "full_text.txt", raw_dir / "metadata.json"
+    if not text_path.is_file() or not meta_path.is_file():
+        _die(f"need full_text.txt + metadata.json in {raw_dir}")
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    text = text_path.read_text(encoding="utf-8", errors="replace")
+    slug = args.slug or _slugify(Path(meta.get("filename", raw_dir.name)).stem)
+
+    bundle = Path(args.out)
+    myc = bundle / ".mycelia"
+    raw_dest = bundle / "raw" / slug
+    raw_dest.mkdir(parents=True, exist_ok=True)
+    (myc / "chunks").mkdir(parents=True, exist_ok=True)
+    shutil.copy2(text_path, raw_dest / "full_text.txt")
+    shutil.copy2(meta_path, raw_dest / "metadata.json")
+
+    chunks = chunk_sections(text, target_words=args.target_words)
+    plan = [
+        {
+            "id": chunk.index,
+            "label": chunk.label,
+            "chapter": chunk.chapter,
+            "start_line": chunk.start_line,
+            "end_line": chunk.end_line,
+            "words": chunk.words,
+        }
+        for chunk in chunks
+    ]
+    source = {
+        "slug": slug,
+        "title": Path(meta.get("filename", slug)).stem,
+        "authors": [],
+        "extraction_method": meta.get("extraction_method", "unknown"),
+        "source_sha256": meta.get("source_sha256", ""),
+        "source_filename": meta.get("filename", ""),
+        "raw_rel": f"raw/{slug}/full_text.txt",
+        "page_offset": meta.get("page_offset"),
+    }
+    (myc / "plan.json").write_text(json.dumps(plan, indent=2) + "\n", encoding="utf-8")
+    (myc / "journal.json").write_text(json.dumps({"done": []}, indent=2) + "\n", encoding="utf-8")
+    (myc / "source.json").write_text(json.dumps(source, indent=2) + "\n", encoding="utf-8")
+    print(f"Plan: {len(chunks)} chunk(s) -> {myc / 'plan.json'}")
+    print(
+        f"Next: fill {myc / 'source.json'} (title/authors), emit {myc / 'chunks'}/<id>.json "
+        f"per chunk, then: book-extract assemble {bundle}"
+    )
+
+
+def _load_source(path: Path) -> Source:
+    """Load the ``source.json`` written by ``build-plan`` into a :class:`Source`."""
+    if not path.is_file():
+        _die(f"missing {path} (run build-plan first)")
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return Source(
+        slug=data["slug"],
+        title=data["title"],
+        authors=tuple(data.get("authors", [])),
+        extraction_method=data.get("extraction_method", "unknown"),
+        source_sha256=data.get("source_sha256", ""),
+        source_filename=data.get("source_filename", ""),
+        raw_rel=data["raw_rel"],
+        page_offset=data.get("page_offset"),
+    )
+
+
+def _load_notes(chunks_dir: Path) -> list[Note]:
+    """Load + validate every Note-JSON file the agent emitted under ``chunks/``."""
+    notes: list[Note] = []
+    for path in sorted(chunks_dir.glob("*.json")):
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        items = payload.get("notes", []) if isinstance(payload, dict) else payload
+        notes.extend(validate_note(obj) for obj in items)
+    return notes
+
+
+def run_assemble(argv: list[str]) -> None:
+    """``assemble`` subcommand: validate chunk notes into an OKF bundle, then lint it."""
+    parser = argparse.ArgumentParser(
+        prog="extract.py assemble",
+        description="Assemble validated Note JSON into an OKF bundle and lint it.",
+    )
+    parser.add_argument("bundle_dir", help="bundle directory initialised by build-plan")
+    parser.add_argument("--timestamp", help="ISO timestamp (default: now)")
+    args = parser.parse_args(argv)
+
+    bundle = Path(args.bundle_dir)
+    myc = bundle / ".mycelia"
+    source = _load_source(myc / "source.json")
+    raw_path = bundle / source.raw_rel
+    if not raw_path.is_file():
+        _die(f"missing raw text at {raw_path}")
+    raw_text = raw_path.read_text(encoding="utf-8", errors="replace")
+    timestamp = args.timestamp or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    try:
+        notes = _load_notes(myc / "chunks")
+        if not notes:
+            _die(f"no notes found in {myc / 'chunks'}")
+        inputs = AssembleInputs(
+            notes=notes, source=source, raw_text=raw_text, timestamp=timestamp
+        )
+        report = assemble(inputs, bundle)
+    except NoteValidationError as exc:
+        _die(str(exc), exc.hint)
+    print(format_report(report))
+    sys.exit(0 if report.ok else 1)
+
+
 def main() -> None:
     """CLI entrypoint: parse args, extract, write outputs, or exit with an error.
 
@@ -764,6 +948,15 @@ def main() -> None:
         return
     if len(sys.argv) > 1 and sys.argv[1] == "backfill-batch":
         run_backfill_batch(sys.argv[2:])
+        return
+    if len(sys.argv) > 1 and sys.argv[1] == "lint":
+        run_lint(sys.argv[2:])
+        return
+    if len(sys.argv) > 1 and sys.argv[1] == "build-plan":
+        run_build_plan(sys.argv[2:])
+        return
+    if len(sys.argv) > 1 and sys.argv[1] == "assemble":
+        run_assemble(sys.argv[2:])
         return
     args = build_arg_parser().parse_args()
     if args.debug:

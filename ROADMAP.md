@@ -8,6 +8,34 @@ from `scripts/bookextract/__init__.py`; shipped features are recorded in
 Open work is tracked as [GitHub issues](https://github.com/strawberry-code/book-to-skill/issues);
 milestones below link to them where they exist.
 
+## Direction — Mycelia: book → OKF knowledge vault
+
+The strategic default is shifting from **one skill per book** (doesn't scale past a few books —
+every skill description is injected into context each session) to an atomic, interlinked
+**[OKF](https://okf.md/spec/) knowledge vault** that scales to hundreds of books. The new emitter
+is **[`MYCELIA.md`](MYCELIA.md)**; the legacy `SKILL.md` skill flow stays supported.
+
+Landed in this direction:
+
+- **`MYCELIA.md` vault emitter** — atomic notes (concept/framework/principle/entity/method/anti-pattern),
+  OKF-native portable bundle, `# Citations` provenance, check-before-create cross-book reconciliation.
+- **`book-extract lint`** — stdlib OKF-bundle linter: zero dangling + `type`-required + reserved-file +
+  citation-coverage + reciprocal-backlink checks.
+- **Orchestrated build (P0)** — `book-extract build-plan` + `assemble`: the LLM emits validated Note JSON,
+  the code chunks, grounds (normalize-then-match, ligature/line-break tolerant), dedups, inserts reciprocal
+  backlinks, computes folios, and gates with the linter. Removes hand-emission drift. See
+  [`docs/mycelia-productization.md`](docs/mycelia-productization.md).
+
+Next for Mycelia (from the productization assessment):
+
+- **Index/embedding reconciliation (P1)** — beyond the current slug/alias dedup: cosine-similarity +
+  LLM arbitration for semantic synonyms that don't share a string ("Deutschland"/"Germany").
+- **Semantic QA pass** — an independent verifier checking each note's body against its cited source.
+- **Skill → vault converter** — re-emit already-generated book-skills (`chapters/*.md` + manifest) as OKF bundles.
+- **Obsidian vault → OKF converter** — `[[wikilink]]` → bundle-relative links + frontmatter normalization.
+- **Contradiction dashboard** — aggregate `contested: true` notes into a `reports/` view.
+- **Headless autonomy** — optional `anthropic` SDK / `claude -p` path if the in-session build proves too manual at scale.
+
 ## v1.6.1 — current
 
 Shipped (see CHANGELOG for the full list and migration classes):
@@ -40,10 +68,11 @@ Adoption & breadth (this release line):
 
 ## v1.8.0+ — multi-document
 
-- **Multi-book domain libraries** — fuse N related books into one skill with cross-linked
-  frameworks (e.g. several DDD books → one "domain modeling" skill).
-  ([#6](https://github.com/strawberry-code/book-to-skill/issues/6))
-- Cross-document references and a shared glossary across a domain library *(planned)*.
+- **Multi-book domain libraries** — now realized through the **Mycelia** vault (above): N related
+  books converge into one OKF bundle with shared canonical concept notes and cross-book citations,
+  rather than one fused skill. ([#6](https://github.com/strawberry-code/book-to-skill/issues/6))
+- Cross-document references and a shared glossary across a domain library — native to the vault
+  (`# Citations` + `## Related` + reconciliation).
 
 > Items marked *(planned)* are not yet implemented. The dated, shipped record of truth is
 > always [`CHANGELOG.md`](CHANGELOG.md).

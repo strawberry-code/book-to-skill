@@ -1,0 +1,26 @@
+{
+  "generator_version": "1.7.0",
+  "source_sha256": "9781098cabdc1909fcdcb1494ddb4acde69dea8c06c726af639da5db65160e6b",
+  "page_offset": null,
+  "figure_count": 0,
+  "source_file": "examples/demo-input/mini-python-code-review-guide.md",
+  "filename": "mini-python-code-review-guide.md",
+  "format": "markdown",
+  "extraction_method": "plain-text",
+  "extraction_mode": "text",
+  "file_size_mb": 0.01,
+  "sections": 3,
+  "chars": 5912,
+  "words": 1103,
+  "estimated_tokens": 1434,
+  "output_text": "full_text.txt",
+  "structure": {
+    "chapters_detected": 3,
+    "chapter_headings_sample": [
+      "Chapter 1 — The Code Review Mindset",
+      "Chapter 2 — Security Anti-Patterns in Python",
+      "Chapter 3 — Maintainability Patterns"
+    ],
+    "has_toc": false
+  }
+}

@@ -13,6 +13,8 @@ argument-hint: <path-to-document> [skill-name-slug]
 
 # Book-to-Skill Converter
 
+> **⚠️ Legacy emitter.** This recipe produces a single-book **agent skill**. The project default is now **[`MYCELIA.md`](MYCELIA.md)**, which emits an atomic, interlinked **OKF knowledge vault** that scales across many books (one skill per book hits the context ceiling at library scale). Use this recipe when you specifically want the single-book skill format; otherwise prefer Mycelia. Both share the same extractor (`scripts/bookextract/`) and the same Step 3.5 grounding contract.
+
 Transform written knowledge into actionable agent skills by extracting structure — not producing summaries.
 
 ## Philosophy

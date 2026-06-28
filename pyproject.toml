@@ -1,12 +1,14 @@
-# Project + tooling configuration for book-to-skill.
+# Project + tooling configuration for Mycelia (repo: book-to-skill).
 #
-# `book-to-skill` is two things in one repo:
-#   1. The *generator* — `SKILL.md` + the `/book-to-skill` slash command. Claude
-#      reads these to turn a document into a Claude Code skill. This is the
-#      primary, install-free interface and is NOT a Python entry point.
-#   2. The *extractor/upgrader* — the `bookextract` package under `scripts/`,
+# This repo is two things:
+#   1. The *generators* — prose recipes Claude reads to turn a document into either:
+#        - `MYCELIA.md` → an atomic, interlinked OKF knowledge vault (the default), or
+#        - `SKILL.md`   → a single-book Claude Code skill (legacy).
+#      These are the primary, install-free interfaces and are NOT Python entry points.
+#   2. The *extractor/upgrader/linter* — the `bookextract` package under `scripts/`,
 #      exposed as the `book-extract` console script. It extracts text from a
-#      document and upgrades already-generated skills.
+#      document, upgrades already-generated skills, and lints OKF vault bundles
+#      (`book-extract lint <bundle>`).
 #
 # The [project] table below makes (2) installable with `uv`/pip. Runtime
 # extractors (docling, pypdf, ebooklib, …) stay OPTIONAL extras — the package
@@ -18,8 +20,8 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "book-to-skill"
-description = "Turn any technical book or document into a Claude Code skill — study, reference, review your code, and scaffold from it."
+name = "mycelia"
+description = "Turn any book or document into an atomic, interlinked OKF knowledge vault (or a legacy single-book Claude Code skill) — grounded, portable, and built to scale across hundreds of books."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE.md" }
@@ -35,6 +37,11 @@ keywords = [
     "long-context",
     "rag-alternative",
     "docling",
+    "okf",
+    "open-knowledge-format",
+    "knowledge-vault",
+    "zettelkasten",
+    "second-brain",
 ]
 classifiers = [
     "Development Status :: 5 - Production/Stable",

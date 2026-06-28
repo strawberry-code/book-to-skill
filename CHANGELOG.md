@@ -30,6 +30,26 @@ re-runs only those — not the whole pipeline.
 
 <!-- Next release. Entries go here, each tagged with its migration class. -->
 
+### Added
+- **Mycelia — OKF knowledge-vault emitter (`MYCELIA.md`).** New default generation recipe that turns a
+  book into an atomic, interlinked [OKF v0.1](https://okf.md/spec/) bundle: one note per
+  concept/framework/principle/entity/method/anti-pattern, bundle-relative Markdown links, reserved
+  `index.md`/`log.md`, immutable `raw/`, `# Citations` provenance back to `references/` source notes, and
+  **check-before-create cross-book reconciliation** (a concept seen in multiple books → one canonical note
+  with multiple citations). Reuses the existing extractor and Step 3.5 grounding contract unchanged. The
+  legacy single-book skill emitter (`SKILL.md`) stays supported. [infra]
+- **`book-extract lint <bundle>`** — stdlib OKF-bundle linter: every non-reserved `.md` has a non-empty
+  `type`; every bundle-relative link resolves (zero dangling); `index.md` carries no frontmatter (except
+  root `okf_version`); `log.md` dates are ISO-8601, newest-first; plus citation coverage (≥ a floor) and
+  reciprocal `## Related` backlinks. The deterministic success gate for a generated vault. [infra]
+- **Mycelia orchestrated build (P0) — `book-extract build-plan` + `assemble`.** Inverts the generator so
+  the LLM emits validated *Note JSON* and the **code** assembles the bundle: deterministic chunking
+  (`chunking.py`), normalize-then-match grounding that folds ligatures/whitespace and recovers verbatim
+  spans across line breaks (`notes.py`), and an assembler that dedups by slug, inserts reciprocal
+  backlinks, computes printed folios, and runs the lint gate (`assemble.py`). Removes the drift of
+  hand-emitting Markdown. Hybrid in-session (no new dependency, no separate API billing); the
+  hand-emission recipe stays as the small-book fallback. [infra]
+
 ### Changed
 - Description tuning (#2) now covers **all** high-frequency triggers from `cues.md`, not a
   2–4 sample. The generated `SKILL.md` "Proactively recall when…" tail is the only activation
