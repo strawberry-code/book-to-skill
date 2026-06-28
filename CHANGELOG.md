@@ -49,6 +49,14 @@ re-runs only those — not the whole pipeline.
   backlinks, computes printed folios, and runs the lint gate (`assemble.py`). Removes the drift of
   hand-emitting Markdown. Hybrid in-session (no new dependency, no separate API billing); the
   hand-emission recipe stays as the small-book fallback. [infra]
+- **Deterministic reconciliation (P1) — `reconcile.py`.** The assembler now folds two high-precision,
+  dependency-free forms of the *same* concept that slug/alias dedup missed: **acronym ↔ expansion**
+  (`bsc` ↔ `binary-symmetric-channel`, a single token equal to the initials of a dashed slug) and
+  **singular ↔ plural** (slugs differing only by a trailing `s`, `encoder` ↔ `encoders`). The folded slug
+  becomes an alias of the canonical note, so `## Related` links resolve through it; the canonical note's
+  identity wins regardless of chunk order. Deliberately conservative — `basis`/`bases` and `code`/`coding`
+  do **not** merge; pure-semantic and cross-lingual synonymy stay a roadmap item (would need embeddings).
+  [infra]
 
 ### Changed
 - Description tuning (#2) now covers **all** high-frequency triggers from `cues.md`, not a

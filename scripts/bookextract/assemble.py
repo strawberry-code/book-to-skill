@@ -21,6 +21,7 @@ from typing import Final
 from bookextract import __version__
 from bookextract.notes import GroundedCitation, Note, ground_citation
 from bookextract.okf_lint import LintReport, lint_bundle
+from bookextract.reconcile import reconcile_slugs
 
 _TYPE_DIR: Final[dict[str, str]] = {
     "Concept": "concepts",
@@ -111,11 +112,11 @@ def _ground_all(note: Note, source: Source, raw: str) -> list[GroundedCitation]:
     return [ground_citation(c, raw, source.page_offset) for c in note.citations]
 
 
-def _new(note: Note, grounded: list[GroundedCitation]) -> _Merged:
-    """Build a fresh accumulator from a note's first occurrence."""
+def _new(note: Note, grounded: list[GroundedCitation], slug: str) -> _Merged:
+    """Build a fresh accumulator from a note's first occurrence under ``slug``."""
     return _Merged(
         type=note.type,
-        slug=note.slug,
+        slug=slug,
         title=note.title,
         description=note.description,
         confidence=note.confidence,
@@ -128,8 +129,13 @@ def _new(note: Note, grounded: list[GroundedCitation]) -> _Merged:
     )
 
 
-def _merge(dst: _Merged, note: Note, grounded: list[GroundedCitation]) -> None:
-    """Fold a repeat occurrence of a slug into its canonical accumulator."""
+def _merge(dst: _Merged, note: Note, grounded: list[GroundedCitation], *, primary: bool) -> None:
+    """Fold a repeat occurrence into its canonical accumulator.
+
+    ``primary`` is true when this occurrence's own slug is the canonical one, so
+    its identity fields win regardless of chunk order (the acronym occurrence
+    must not impose its title on the spelled-out canonical note).
+    """
     dst.tags = _union(dst.tags, note.tags)
     dst.aliases = _union(dst.aliases, note.aliases)
     dst.related |= set(note.related)
@@ -138,7 +144,10 @@ def _merge(dst: _Merged, note: Note, grounded: list[GroundedCitation]) -> None:
         if (cit.source, cit.chapter, cit.quote) not in seen:
             dst.citations.append(cit)
             seen.add((cit.source, cit.chapter, cit.quote))
-    if not dst.description:
+    if primary:
+        dst.type, dst.title, dst.description = note.type, note.title, note.description
+        dst.confidence, dst.status = note.confidence, note.status
+    elif not dst.description:
         dst.description = note.description
     if len(note.body) > len(dst.body):
         dst.body = note.body
@@ -146,14 +155,23 @@ def _merge(dst: _Merged, note: Note, grounded: list[GroundedCitation]) -> None:
 
 
 def _collect(notes: list[Note], source: Source, raw: str) -> dict[str, _Merged]:
-    """Deduplicate notes by slug, grounding each citation as it is folded in."""
+    """Deduplicate notes by canonical slug, grounding each citation as it folds in.
+
+    Beyond exact-slug dedup, :func:`reconcile_slugs` folds acronym/plural variants
+    into one canonical note; the folded slug is recorded as an alias so ``related``
+    links resolve through the existing alias index.
+    """
+    remap = reconcile_slugs({n.slug for n in notes})
     canon: dict[str, _Merged] = {}
     for note in notes:
+        target = remap.get(note.slug, note.slug)
         grounded = _ground_all(note, source, raw)
-        if note.slug in canon:
-            _merge(canon[note.slug], note, grounded)
+        if target in canon:
+            _merge(canon[target], note, grounded, primary=note.slug == target)
         else:
-            canon[note.slug] = _new(note, grounded)
+            canon[target] = _new(note, grounded, target)
+        if note.slug != target:
+            canon[target].aliases = _union(canon[target].aliases, (note.slug,))
     return canon
 
 

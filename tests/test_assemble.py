@@ -79,6 +79,63 @@ def test_dedupe_merges_same_slug_across_chunks(tmp_path: Path):
     assert len(citation_lines) == 2  # both sources accrued on the one note
 
 
+def test_acronym_folds_into_expansion(tmp_path: Path):
+    raw = "binary symmetric channel definition here\nthe bsc model is described here\n"
+    expansion = Note(
+        type="Concept",
+        slug="binary-symmetric-channel",
+        title="Binary Symmetric Channel",
+        description="A channel model.",
+        tags=(),
+        aliases=(),
+        confidence="high",
+        status="established",
+        body="The canonical, spelled-out note.",
+        related=(),
+        citations=(Citation(1, "binary symmetric channel definition", "src"),),
+    )
+    acronym = Note(
+        type="Concept",
+        slug="bsc",
+        title="BSC",
+        description="Short form.",
+        tags=(),
+        aliases=(),
+        confidence="high",
+        status="established",
+        body="x",
+        related=(),
+        citations=(Citation(1, "the bsc model is described", "src"),),
+    )
+    # acronym occurrence FIRST: the expansion's identity must still win.
+    inputs = AssembleInputs(
+        notes=[acronym, expansion], source=_SOURCE, raw_text=raw, timestamp="2026-06-28T00:00:00Z"
+    )
+    report = assemble(inputs, tmp_path)
+    assert report.ok, report.errors
+    assert report.atomic_notes == 1
+    assert not (tmp_path / "concepts" / "bsc.md").exists()
+    note = (tmp_path / "concepts" / "binary-symmetric-channel.md").read_text(encoding="utf-8")
+    assert "title: \"Binary Symmetric Channel\"" in note  # expansion identity won
+    assert "aliases: [bsc]" in note  # folded slug kept as alias
+    citation_lines = [ln for ln in note.splitlines() if ln.startswith("[")]
+    assert len(citation_lines) == 2  # both citations accrued
+
+
+def test_plural_folds_into_singular(tmp_path: Path):
+    raw = "an encoder maps messages\nseveral encoders are compared\n"
+    singular = _note("encoder", related=(), quote="an encoder maps messages")
+    plural = _note("encoders", related=(), quote="several encoders are compared")
+    inputs = AssembleInputs(
+        notes=[singular, plural], source=_SOURCE, raw_text=raw, timestamp="2026-06-28T00:00:00Z"
+    )
+    report = assemble(inputs, tmp_path)
+    assert report.ok, report.errors
+    assert report.atomic_notes == 1
+    assert (tmp_path / "concepts" / "encoder.md").is_file()
+    assert not (tmp_path / "concepts" / "encoders.md").exists()
+
+
 def test_gate_flags_an_uncited_note(tmp_path: Path):
     uncited = Note(
         type="Concept",

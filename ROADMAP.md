@@ -25,11 +25,16 @@ Landed in this direction:
   the code chunks, grounds (normalize-then-match, ligature/line-break tolerant), dedups, inserts reciprocal
   backlinks, computes folios, and gates with the linter. Removes hand-emission drift. See
   [`docs/mycelia-productization.md`](docs/mycelia-productization.md).
+- **Deterministic reconciliation (P1)** — `reconcile.py`: beyond slug/alias dedup, folds **acronym ↔
+  expansion** (`bsc` ↔ `binary-symmetric-channel`) and **singular ↔ plural** (`encoder` ↔ `encoders`)
+  with zero dependencies. Conservative by design (`basis`/`bases` stay distinct); the folded slug becomes
+  an alias so `## Related` resolves through it.
 
 Next for Mycelia (from the productization assessment):
 
-- **Index/embedding reconciliation (P1)** — beyond the current slug/alias dedup: cosine-similarity +
-  LLM arbitration for semantic synonyms that don't share a string ("Deutschland"/"Germany").
+- **Embedding reconciliation (P1+)** — beyond the deterministic acronym/plural folding above:
+  cosine-similarity + LLM arbitration for pure-semantic or cross-lingual synonyms that share no string
+  ("Deutschland"/"Germany"). Deferred — would break the current zero-dependency stance.
 - **Semantic QA pass** — an independent verifier checking each note's body against its cited source.
 - **Skill → vault converter** — re-emit already-generated book-skills (`chapters/*.md` + manifest) as OKF bundles.
 - **Obsidian vault → OKF converter** — `[[wikilink]]` → bundle-relative links + frontmatter normalization.
