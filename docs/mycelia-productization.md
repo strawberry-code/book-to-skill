@@ -188,5 +188,14 @@ D2 embedding fork.
 - **Fase E — upstream extraction quality** *(gap: noisy source)*. Docling/technical mode for
   math/tables/figures; cleaner raw; surfaced extraction confidence. *Success*: a formula/table-heavy
   chunk yields fewer grounding failures than pdftotext, measured by A.
+  **Status (E shipped)**: the layout-aware Docling path already exists as `--mode technical` (an
+  optional extra). The dependency-free, ethos-consistent win was the noise the `pdftotext` default
+  leaves in the body: `clean.py` + `book-extract build-plan --clean` strips bare page-number lines
+  and **repeated** ALL-CAPS running headers/footers before chunking (one-off all-caps headings and
+  all lowercase prose are kept; form-feeds preserved so folio counting stays exact). Real run on the
+  *Coding Theory* book: **618 header/page lines removed** (17 357 → 16 739, ~3.6%), chunk labels
+  still clean — fewer header-quote grounding failures downstream. Full Docling wiring into the
+  orchestrated build was deliberately not added (heavy dep, low marginal value vs the cleaner).
+  **Fase E complete — plan A–E done.**
 
 Dependency order: `A` → `B2 ‖ C1` → `B1, B3` (use C) → **re-measure with A** → `D` → `E`.

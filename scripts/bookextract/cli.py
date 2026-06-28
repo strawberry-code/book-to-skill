@@ -25,6 +25,7 @@ from bookextract import __version__, deps
 from bookextract.assemble import AssembleInputs, Source, SourceDoc, assemble
 from bookextract.batch import Match, match_sources
 from bookextract.chunking import chunk_sections
+from bookextract.clean import clean_text
 from bookextract.cover import cover_bundle
 from bookextract.dedupe import dedupe_bundle
 from bookextract.deps import OfferContext, normalize_install_mode
@@ -1019,6 +1020,10 @@ def run_build_plan(argv: list[str]) -> None:
         "--append", action="store_true",
         help="add this book to an existing bundle (multi-book) instead of starting fresh",
     )
+    parser.add_argument(
+        "--clean", action="store_true",
+        help="strip running headers/footers + page-number lines from the raw before chunking",
+    )
     args = parser.parse_args(argv)
 
     raw_dir = Path(args.raw_dir)
@@ -1027,6 +1032,9 @@ def run_build_plan(argv: list[str]) -> None:
         _die(f"need full_text.txt + metadata.json in {raw_dir}")
     meta = json.loads(meta_path.read_text(encoding="utf-8"))
     text = text_path.read_text(encoding="utf-8", errors="replace")
+    removed = 0
+    if args.clean:
+        text, removed = clean_text(text)
     slug = args.slug or _slugify(Path(meta.get("filename", raw_dir.name)).stem)
 
     bundle = Path(args.out)
@@ -1034,7 +1042,7 @@ def run_build_plan(argv: list[str]) -> None:
     raw_dest = bundle / "raw" / slug
     raw_dest.mkdir(parents=True, exist_ok=True)
     (myc / "chunks").mkdir(parents=True, exist_ok=True)
-    shutil.copy2(text_path, raw_dest / "full_text.txt")
+    (raw_dest / "full_text.txt").write_text(text, encoding="utf-8")  # the chunked/grounded text
     shutil.copy2(meta_path, raw_dest / "metadata.json")
 
     chunks = chunk_sections(text, target_words=args.target_words)
@@ -1076,7 +1084,8 @@ def run_build_plan(argv: list[str]) -> None:
     (myc / "source.json").write_text(json.dumps(sources[0], indent=2) + "\n", encoding="utf-8")
     if not append:
         (myc / "journal.json").write_text(json.dumps({"done": []}, indent=2) + "\n", "utf-8")
-    print(f"Plan: {len(new_chunks)} new chunk(s), {len(plan)} total -> {myc / 'plan.json'}")
+    cleaned = f" (cleaned {removed} header/page line(s))" if removed else ""
+    print(f"Plan: {len(new_chunks)} new, {len(plan)} total{cleaned} -> {myc / 'plan.json'}")
     print(
         f"Next: fill title/authors in {sources_path}, build the {len(plan)} chunk(s), "
         f"then: book-extract assemble {bundle}"
