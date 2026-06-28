@@ -76,3 +76,17 @@ def test_grounding_remaps_folio_with_offset():
 def test_grounding_raises_when_quote_absent():
     with pytest.raises(NoteValidationError):
         ground_citation(Citation(1, "this text is not in the source", "src"), _RAW, None)
+
+
+def test_validate_note_canonicalizes_lowercase_type():
+    # Models sometimes emit "concept"; it must canonicalize to "Concept", not raise.
+    obj = {
+        "type": "concept",
+        "slug": "alpha",
+        "title": "Alpha",
+        "description": "x.",
+        "body": "Body.",
+        "citations": [{"chapter": 1, "quote": "q", "source": "src"}],
+    }
+    note = validate_note(obj)
+    assert note.type == "Concept"

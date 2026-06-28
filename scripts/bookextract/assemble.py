@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Final
 
 from bookextract import __version__
-from bookextract.notes import GroundedCitation, Note, ground_citation
+from bookextract.notes import GroundedCitation, Note, NoteValidationError, ground_citation
 from bookextract.okf_lint import LintReport, lint_bundle
 from bookextract.reconcile import reconcile_slugs
 
@@ -67,6 +67,14 @@ class AssembleInputs:
 
 
 @dataclass
+class _DropStats:
+    """What ``_collect`` discarded so the assembler can report it (never silently)."""
+
+    citations: int = 0  # ungroundable citations skipped
+    notes: int = 0  # notes dropped for having no groundable citation left
+
+
+@dataclass
 class _Merged:
     """A note accumulated across chunks (mutable: merges and backlinks land here)."""
 
@@ -107,9 +115,21 @@ def _norm_key(value: str) -> str:
     return value.strip().casefold()
 
 
-def _ground_all(note: Note, source: Source, raw: str) -> list[GroundedCitation]:
-    """Ground every citation of a note against the raw source text."""
-    return [ground_citation(c, raw, source.page_offset) for c in note.citations]
+def _ground_all(note: Note, source: Source, raw: str) -> tuple[list[GroundedCitation], int]:
+    """Ground a note's citations, skipping (and counting) any that don't verify.
+
+    Autonomous generation occasionally emits a near-verbatim quote that fails the
+    exact grounding check; one such citation must not abort the whole bundle, so it
+    is dropped and reported rather than raised.
+    """
+    grounded: list[GroundedCitation] = []
+    dropped = 0
+    for citation in note.citations:
+        try:
+            grounded.append(ground_citation(citation, raw, source.page_offset))
+        except NoteValidationError:
+            dropped += 1
+    return grounded, dropped
 
 
 def _new(note: Note, grounded: list[GroundedCitation], slug: str) -> _Merged:
@@ -154,25 +174,32 @@ def _merge(dst: _Merged, note: Note, grounded: list[GroundedCitation], *, primar
     dst.merged = True
 
 
-def _collect(notes: list[Note], source: Source, raw: str) -> dict[str, _Merged]:
+def _collect(notes: list[Note], source: Source, raw: str) -> tuple[dict[str, _Merged], _DropStats]:
     """Deduplicate notes by canonical slug, grounding each citation as it folds in.
 
     Beyond exact-slug dedup, :func:`reconcile_slugs` folds acronym/plural variants
     into one canonical note; the folded slug is recorded as an alias so ``related``
-    links resolve through the existing alias index.
+    links resolve through the existing alias index. Ungroundable citations are
+    skipped, and a note left with no groundable citation is dropped (it could not
+    satisfy the coverage gate anyway) — both are counted in the returned stats.
     """
     remap = reconcile_slugs({n.slug for n in notes})
     canon: dict[str, _Merged] = {}
+    stats = _DropStats()
     for note in notes:
+        grounded, dropped = _ground_all(note, source, raw)
+        stats.citations += dropped
+        if not grounded:
+            stats.notes += 1
+            continue
         target = remap.get(note.slug, note.slug)
-        grounded = _ground_all(note, source, raw)
         if target in canon:
             _merge(canon[target], note, grounded, primary=note.slug == target)
         else:
             canon[target] = _new(note, grounded, target)
         if note.slug != target:
             canon[target].aliases = _union(canon[target].aliases, (note.slug,))
-    return canon
+    return canon, stats
 
 
 def _alias_index(canon: dict[str, _Merged]) -> dict[str, str]:
@@ -378,18 +405,26 @@ def _write_root_index(bundle: Path, source: Source, canon: dict[str, _Merged]) -
     _write(bundle / "index.md", "\n".join(lines) + "\n")
 
 
-def _write_log(bundle: Path, source: Source, canon: dict[str, _Merged], timestamp: str) -> None:
+def _write_log(
+    bundle: Path, source: Source, canon: dict[str, _Merged], timestamp: str, stats: _DropStats
+) -> None:
     """Write ``log.md`` with a single dated ingest entry (idempotent rebuild)."""
     merged = sum(1 for m in canon.values() if m.merged)
+    dropped = ""
+    if stats.citations or stats.notes:
+        dropped = (
+            f" Dropped {stats.citations} ungroundable citation(s) "
+            f"and {stats.notes} uncited note(s)."
+        )
     entry = (
         f"- **Create** Assembled {len(canon)} atomic notes from "
-        f'"{source.title}" ({merged} merged across chunks).'
+        f'"{source.title}" ({merged} merged across chunks).{dropped}'
     )
     _write(bundle / "log.md", f"# Log\n\n## {timestamp[:10]}\n{entry}\n")
 
 
 def _write_manifest(
-    bundle: Path, source: Source, canon: dict[str, _Merged], timestamp: str
+    bundle: Path, source: Source, canon: dict[str, _Merged], timestamp: str, stats: _DropStats
 ) -> None:
     """Write ``.mycelia.json`` provenance + per-section note counts."""
     counts = {
@@ -411,6 +446,7 @@ def _write_manifest(
             }
         ],
         "note_counts": counts,
+        "dropped": {"citations": stats.citations, "notes": stats.notes},
     }
     _write(bundle / ".mycelia.json", json.dumps(manifest, indent=2) + "\n")
 
@@ -418,7 +454,7 @@ def _write_manifest(
 def assemble(inputs: AssembleInputs, bundle_dir: Path) -> LintReport:
     """Assemble validated notes into an OKF bundle and return the lint gate report."""
     source, timestamp = inputs.source, inputs.timestamp
-    canon = _collect(inputs.notes, source, inputs.raw_text)
+    canon, stats = _collect(inputs.notes, source, inputs.raw_text)
     _resolve_related(canon, _alias_index(canon))
     slug_index = {s: (_TYPE_DIR[m.type], m.title, m.description) for s, m in canon.items()}
     ctx = _Ctx(timestamp=timestamp, sources={source.slug: source}, slug_index=slug_index)
@@ -427,6 +463,6 @@ def assemble(inputs: AssembleInputs, bundle_dir: Path) -> LintReport:
     _write_source(bundle_dir, source, ctx)
     _write_moc(bundle_dir, source, canon, ctx)
     _write_root_index(bundle_dir, source, canon)
-    _write_log(bundle_dir, source, canon, timestamp)
-    _write_manifest(bundle_dir, source, canon, timestamp)
+    _write_log(bundle_dir, source, canon, timestamp, stats)
+    _write_manifest(bundle_dir, source, canon, timestamp, stats)
     return lint_bundle(bundle_dir, strict_links=True)

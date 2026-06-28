@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -136,19 +137,31 @@ def test_plural_folds_into_singular(tmp_path: Path):
     assert not (tmp_path / "concepts" / "encoders.md").exists()
 
 
-def test_gate_flags_an_uncited_note(tmp_path: Path):
+def test_ungroundable_citation_is_dropped_not_fatal(tmp_path: Path):
+    # One note cites a quote absent from raw; assemble must drop it, keep the rest.
+    good = _note("alpha", related=(), quote="alpha concept text")
+    bad = _note("beta", related=(), quote="this phrase is not in the source at all")
+    report = _assemble([good, bad], tmp_path)
+    assert report.ok, report.errors
+    assert (tmp_path / "concepts" / "alpha.md").is_file()
+    assert not (tmp_path / "concepts" / "beta.md").exists()  # dropped (no groundable citation)
+    manifest = json.loads((tmp_path / ".mycelia.json").read_text(encoding="utf-8"))
+    assert manifest["dropped"]["notes"] == 1
+    log = (tmp_path / "log.md").read_text(encoding="utf-8")
+    assert "uncited note" in log  # the drop is reported, not silent
+
+
+def test_uncited_note_is_dropped_and_reported(tmp_path: Path):
+    # A note with no groundable citation is dropped (it can't satisfy coverage) and
+    # the drop is recorded — alongside a cited note that survives.
+    good = _note("alpha", related=(), quote="alpha concept text")
     uncited = Note(
-        type="Concept",
-        slug="orphan",
-        title="Orphan",
-        description="No citation.",
-        tags=(),
-        aliases=(),
-        confidence="high",
-        status="established",
-        body="Body.",
-        related=(),
-        citations=(),
+        type="Concept", slug="orphan", title="Orphan", description="No citation.",
+        tags=(), aliases=(), confidence="high", status="established",
+        body="Body.", related=(), citations=(),
     )
-    report = _assemble([uncited], tmp_path)
-    assert not report.ok  # the lint gate catches the missing citation
+    report = _assemble([good, uncited], tmp_path)
+    assert report.ok, report.errors
+    assert not (tmp_path / "concepts" / "orphan.md").exists()
+    manifest = json.loads((tmp_path / ".mycelia.json").read_text(encoding="utf-8"))
+    assert manifest["dropped"]["notes"] == 1

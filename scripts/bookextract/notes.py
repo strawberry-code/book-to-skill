@@ -23,6 +23,8 @@ from bookextract.chunking import folio
 ATOMIC_TYPES: Final[frozenset[str]] = frozenset(
     {"Concept", "Framework", "Principle", "Entity", "Method", "AntiPattern"}
 )
+# Case-insensitive lookup → canonical type: models sometimes emit "concept" for "Concept".
+_CANON_TYPE: Final[dict[str, str]] = {t.casefold(): t for t in ATOMIC_TYPES}
 _CONFIDENCE: Final[frozenset[str]] = frozenset({"low", "medium", "high"})
 _STATUS: Final[frozenset[str]] = frozenset({"established", "contested", "insufficient"})
 _DEFAULT_CONFIDENCE: Final[str] = "medium"
@@ -32,8 +34,12 @@ _WS: Final[re.Pattern[str]] = re.compile(r"\s+")
 _QUOTE_PREVIEW: Final[int] = 60
 
 
-class NoteValidationError(Exception):
-    """A note (or its grounding) failed validation; carries an optional fix hint."""
+class NoteValidationError(ValueError):
+    """A note (or its grounding) failed validation; carries an optional fix hint.
+
+    Subclasses ``ValueError`` so the orchestration loops (runner/cover), which catch
+    ``ValueError``, treat a malformed note as a recoverable per-item failure.
+    """
 
     def __init__(self, message: str, hint: str | None = None) -> None:
         super().__init__(message)
@@ -122,9 +128,9 @@ def validate_note(obj: object) -> Note:
     """Validate one agent-emitted JSON object into a :class:`Note`, or raise."""
     if not isinstance(obj, dict):
         raise NoteValidationError("a note must be a JSON object")
-    note_type = _get_str(obj, "type")
-    if note_type not in ATOMIC_TYPES:
-        raise NoteValidationError(f"type {note_type!r} not in {sorted(ATOMIC_TYPES)}")
+    note_type = _CANON_TYPE.get(_get_str(obj, "type").casefold())
+    if note_type is None:
+        raise NoteValidationError(f"type {_get_str(obj, 'type')!r} not in {sorted(ATOMIC_TYPES)}")
     slug = _get_str(obj, "slug")
     if not _SLUG.match(slug):
         raise NoteValidationError(f"slug {slug!r} must be kebab-case ([a-z0-9] with single dashes)")

@@ -25,6 +25,7 @@ from bookextract import __version__, deps
 from bookextract.assemble import AssembleInputs, Source, assemble
 from bookextract.batch import Match, match_sources
 from bookextract.chunking import chunk_sections
+from bookextract.cover import cover_bundle
 from bookextract.deps import OfferContext, normalize_install_mode
 from bookextract.eval import evaluate, format_eval, load_gold, read_notes
 from bookextract.formats import (
@@ -847,6 +848,43 @@ def run_build(argv: list[str]) -> None:
         run_assemble([str(cfg.bundle)])
 
 
+def run_cover(argv: list[str]) -> None:
+    """``cover`` subcommand: coverage critic (Fase B3), loop-until-dry. Spends API budget.
+
+    Re-reads every already-built chunk with its extracted slugs in hand and appends Note
+    JSON for atomic concepts the first pass missed, repeating up to ``--max-rounds`` until a
+    round finds nothing new. Re-run ``assemble`` afterwards to fold the new notes in.
+    """
+    parser = argparse.ArgumentParser(
+        prog="extract.py cover",
+        description="Catch missed concepts per chunk via claude -p, loop-until-dry (spends).",
+    )
+    parser.add_argument("bundle_dir", help="bundle directory whose chunks were built")
+    parser.add_argument("--model", default="opus", help="model alias/name (default: opus)")
+    parser.add_argument("--max-rounds", type=int, default=3, help="max critic rounds per chunk")
+    parser.add_argument("--max-chunks", type=int, default=None, help="cover at most N chunks")
+    parser.add_argument("--timeout", type=int, default=600, help="per-call claude -p timeout (s)")
+    parser.add_argument("--assemble", action="store_true", help="run assemble after covering")
+    args = parser.parse_args(argv)
+
+    bundle_dir = Path(args.bundle_dir)
+    if not (bundle_dir / ".mycelia" / "plan.json").is_file():
+        _die(f"no .mycelia/plan.json in {bundle_dir}", "run build-plan + build first")
+
+    def invoke(prompt: str) -> CliResult:
+        return invoke_claude(prompt, args.model, timeout=args.timeout)
+
+    report = cover_bundle(
+        bundle_dir, invoke, max_rounds=args.max_rounds, max_chunks=args.max_chunks
+    )
+    print(
+        f"Covered {report.chunks} chunk(s), added {report.added} note(s). "
+        f"Cost: ${report.cost_usd:.4f}."
+    )
+    if args.assemble and report.added:
+        run_assemble([str(bundle_dir)])
+
+
 def run_verify(argv: list[str]) -> None:
     """``verify`` subcommand: semantic faithfulness gate (Fase B1). Spends API budget.
 
@@ -1055,6 +1093,7 @@ _SUBCOMMANDS: Final[dict[str, Callable[[list[str]], None]]] = {
     "build-plan": run_build_plan,
     "assemble": run_assemble,
     "build": run_build,
+    "cover": run_cover,
     "verify": run_verify,
     "eval": run_eval,
 }

@@ -146,7 +146,15 @@ D2 embedding fork.
   faithfulness 75% (9 supported, 3 overreach, 0 unsupported) at $0.55 (~$0.046/note batched,
   ≈$2.3/51-note book). The 3 overreach findings were genuine semantic defects (a misstated coding
   theorem, an invented application list, a definition conflated with the decision region) that lint
-  and grounding cannot see. B2 (low value, heuristic chapter map) and B3 deferred.
+  and grounding cannot see. B2 (low value, heuristic chapter map) deferred.
+  **Status (B3 shipped & validated)**: `cover.py` + `book-extract cover` — loop-until-dry critic
+  that re-reads each chunk with its extracted slugs in hand and appends only the missing concepts.
+  On the BSC region, recall rose **67% (manual) → 83% (build) → 92% (after cover)**; the bundle grew
+  51 → 82 atomic notes, lint green. B3 surfaced two real robustness bugs, both fixed: `validate_note`
+  now canonicalizes the note `type` case-insensitively (`concept`→`Concept`), and `assemble` is now
+  resilient — an ungroundable citation or a fully-uncited note is dropped and reported (`log.md` +
+  `.mycelia.json` `dropped`) instead of aborting the whole bundle (2 citations + 1 note dropped on
+  this run).
 - **Fase C — headless orchestration** *(gap #1, now in-scope: Opus headless confirmed)*. *C1 runner*
   drives `claude -p --model opus --output-format json` per pending chunk → `validate_note` → journal
   (resume/idempotent); in-session path stays as fallback on the same Note-JSON contract. *C2*
