@@ -112,3 +112,48 @@ product.
 3. **P1.5** (index-backed reconciliation) — the second-brain payoff, now testable against a real
    multi-book corpus.
 4. **P1.6/P1.7, then P2** as the corpus grows.
+
+---
+
+## Execution plan A–E (2026-06-28)
+
+P0 (orchestrator + programmatic grounding) and the deterministic slice of P1 (acronym/plural
+reconciliation) have shipped and were proven end-to-end on the real *Coding Theory* book (lint
+green, idempotent, live acronym fold, ligature/line-break grounding). The assessment of what still
+blocks "NASA-level" reliability is: the deterministic skeleton is production-grade, but the part that
+determines vault *quality* — knowledge extraction — is still a manual, unverified, non-deterministic
+step with no faithfulness check, no coverage guarantee, and no eval harness. The plan below closes
+that, ordered so quality is **measurable before it is scaled**.
+
+**Headless verified**: `claude -p --model opus --output-format json` runs on `claude-opus-4-8`
+(smoke-tested). Caveats to absorb: ~200K context and a ~64K cached-prefix overhead per cold call
+(≈$0.67 for a trivial call) → prompt-prefix caching and a cost model are load-bearing, not optional.
+
+Cross-cutting constraints: copyrighted gold/raw stay out of the repo (CC0 synthetic fixture in repo);
+pure core + thin CLI; frozen dataclasses; ruff/mypy strict, complexity ≤8; zero new deps except the
+D2 embedding fork.
+
+- **Fase A — the ruler: eval harness + gold standard** *(gap: no metrics)*. `eval.py` (pure) +
+  `book-extract eval <bundle> --gold <gold.json>`: concept recall/precision, link recall, fact-anchor
+  coverage, with a faithfulness-rate hook filled by B1. *Success*: reproducible metrics on the CC0
+  fixture; a private baseline on the real book. **Everything else is measured against this.**
+- **Fase B — quality gates**. *B2 chapter check* (pure: cited quote's physical line must fall in a
+  chunk whose chapter == `citation.chapter`). *B1 semantic QA* (LLM judges body⊨cited-quote;
+  unsupported = gate; reuses C's runner). *B3 coverage critic* (LLM lists concepts present per chunk;
+  diff vs emitted → loop-until-dry). *Success*: injected wrong-chapter/unfaithful notes are caught;
+  recall improves on the gold.
+- **Fase C — headless orchestration** *(gap #1, now in-scope: Opus headless confirmed)*. *C1 runner*
+  drives `claude -p --model opus --output-format json` per pending chunk → `validate_note` → journal
+  (resume/idempotent); in-session path stays as fallback on the same Note-JSON contract. *C2*
+  prefix caching + concurrency cap + budget. *Success*: full book built unattended, lint green,
+  resumable after kill; a documented cost-per-book.
+- **Fase D — deep reconciliation & multi-book** *(gaps: fragmentation, single-book)*. *D1*
+  multi-source assemble (cross-book citations on shared canonical notes). *D2* embedding
+  reconciliation for semantic/cross-lingual synonyms — **deps fork** (local sentence-transformers /
+  API / extended-deterministic), with a no-false-merge guard. *Success*: a shared concept accrues
+  citations from two books; a "germany/deutschland"-class fold with zero false-merge regression.
+- **Fase E — upstream extraction quality** *(gap: noisy source)*. Docling/technical mode for
+  math/tables/figures; cleaner raw; surfaced extraction confidence. *Success*: a formula/table-heavy
+  chunk yields fewer grounding failures than pdftotext, measured by A.
+
+Dependency order: `A` → `B2 ‖ C1` → `B1, B3` (use C) → **re-measure with A** → `D` → `E`.

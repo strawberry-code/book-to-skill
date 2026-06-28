@@ -15,6 +15,7 @@ import re
 import shutil
 import sys
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -25,6 +26,7 @@ from bookextract.assemble import AssembleInputs, Source, assemble
 from bookextract.batch import Match, match_sources
 from bookextract.chunking import chunk_sections
 from bookextract.deps import OfferContext, normalize_install_mode
+from bookextract.eval import evaluate, format_eval, load_gold, read_notes
 from bookextract.formats import (
     FormatSpec,
     sniff_extension,
@@ -801,6 +803,39 @@ def run_lint(argv: list[str]) -> None:
     sys.exit(0 if report.ok else 1)
 
 
+def run_eval(argv: list[str]) -> None:
+    """``eval`` subcommand: score a built bundle against a gold standard.
+
+    Reads the atomic notes from ``bundle_dir``, loads the gold spec, prints concept
+    recall / link recall / fact-anchor coverage with the specific misses, and exits
+    non-zero when concept recall is below ``--min-recall`` (default 0: report-only).
+    """
+    parser = argparse.ArgumentParser(
+        prog="extract.py eval",
+        description="Score an OKF bundle's knowledge coverage against a gold standard.",
+    )
+    parser.add_argument("bundle_dir", help="path to the built OKF bundle")
+    parser.add_argument("--gold", required=True, help="path to the gold-standard JSON spec")
+    parser.add_argument(
+        "--min-recall",
+        type=float,
+        default=0.0,
+        metavar="FRACTION",
+        help="exit non-zero if concept recall is below this (default 0: report-only)",
+    )
+    args = parser.parse_args(argv)
+
+    bundle_dir, gold_path = Path(args.bundle_dir), Path(args.gold)
+    if not bundle_dir.is_dir():
+        _die(f"Not a directory: {bundle_dir}")
+    if not gold_path.is_file():
+        _die(f"Gold spec not found: {gold_path}")
+
+    report = evaluate(read_notes(bundle_dir), load_gold(gold_path))
+    print(format_eval(report))
+    sys.exit(0 if report.ok(args.min_recall) else 1)
+
+
 def _slugify(value: str) -> str:
     """Lowercase kebab-case slug from an arbitrary filename stem."""
     slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
@@ -932,6 +967,17 @@ def run_assemble(argv: list[str]) -> None:
     sys.exit(0 if report.ok else 1)
 
 
+# Subcommand name → handler. Each handler takes the remaining argv and exits or returns.
+_SUBCOMMANDS: Final[dict[str, Callable[[list[str]], None]]] = {
+    "upgrade": run_upgrade,
+    "backfill-batch": run_backfill_batch,
+    "lint": run_lint,
+    "build-plan": run_build_plan,
+    "assemble": run_assemble,
+    "eval": run_eval,
+}
+
+
 def main() -> None:
     """CLI entrypoint: parse args, extract, write outputs, or exit with an error.
 
@@ -940,23 +986,11 @@ def main() -> None:
     ``full_text.txt`` + ``metadata.json``. Exits non-zero on unsupported formats,
     missing files, or a fully failed extraction chain.
 
-    The ``upgrade`` subcommand (``extract.py upgrade <skill-dir>``) is dispatched
-    before extraction parsing so the default positional path stays backward-compatible.
+    Subcommands (``extract.py <name> …``) are dispatched before extraction parsing so
+    the default positional path stays backward-compatible.
     """
-    if len(sys.argv) > 1 and sys.argv[1] == "upgrade":
-        run_upgrade(sys.argv[2:])
-        return
-    if len(sys.argv) > 1 and sys.argv[1] == "backfill-batch":
-        run_backfill_batch(sys.argv[2:])
-        return
-    if len(sys.argv) > 1 and sys.argv[1] == "lint":
-        run_lint(sys.argv[2:])
-        return
-    if len(sys.argv) > 1 and sys.argv[1] == "build-plan":
-        run_build_plan(sys.argv[2:])
-        return
-    if len(sys.argv) > 1 and sys.argv[1] == "assemble":
-        run_assemble(sys.argv[2:])
+    if len(sys.argv) > 1 and sys.argv[1] in _SUBCOMMANDS:
+        _SUBCOMMANDS[sys.argv[1]](sys.argv[2:])
         return
     args = build_arg_parser().parse_args()
     if args.debug:
