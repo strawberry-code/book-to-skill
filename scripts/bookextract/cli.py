@@ -26,6 +26,7 @@ from bookextract.assemble import AssembleInputs, Source, SourceDoc, assemble
 from bookextract.batch import Match, match_sources
 from bookextract.chunking import chunk_sections
 from bookextract.cover import cover_bundle
+from bookextract.dedupe import dedupe_bundle
 from bookextract.deps import OfferContext, normalize_install_mode
 from bookextract.eval import evaluate, format_eval, load_gold, read_notes
 from bookextract.formats import (
@@ -885,6 +886,44 @@ def run_cover(argv: list[str]) -> None:
         run_assemble([str(bundle_dir)])
 
 
+def run_dedupe(argv: list[str]) -> None:
+    """``dedupe`` subcommand: semantic reconciliation (Fase D2). Spends API budget.
+
+    A token-overlap prefilter proposes candidate same-concept pairs (no deps); ``claude
+    -p`` arbitrates each conservatively. A confirmed merge renames the loser note's slug
+    to the winner's (old slug kept as alias) in the chunk JSON, so a subsequent ``assemble``
+    folds them. Re-run ``assemble`` (or pass ``--assemble``) to apply.
+    """
+    parser = argparse.ArgumentParser(
+        prog="extract.py dedupe",
+        description="Fold same-concept notes via token-overlap prefilter + claude -p (spends).",
+    )
+    parser.add_argument("bundle_dir", help="bundle directory whose chunks were built")
+    parser.add_argument("--model", default="opus", help="model alias/name (default: opus)")
+    parser.add_argument(
+        "--threshold", type=float, default=0.6, metavar="J",
+        help="min title+description Jaccard overlap to consider a pair (default 0.6)",
+    )
+    parser.add_argument("--timeout", type=int, default=600, help="per-call claude -p timeout (s)")
+    parser.add_argument("--assemble", action="store_true", help="run assemble after merging")
+    args = parser.parse_args(argv)
+
+    bundle_dir = Path(args.bundle_dir)
+    if not (bundle_dir / ".mycelia" / "chunks").is_dir():
+        _die(f"no .mycelia/chunks in {bundle_dir}", "run build-plan + build first")
+
+    def invoke(prompt: str) -> CliResult:
+        return invoke_claude(prompt, args.model, timeout=args.timeout)
+
+    report = dedupe_bundle(bundle_dir, invoke, threshold=args.threshold)
+    print(
+        f"Checked {report.candidates} candidate pair(s), merged {report.merged}. "
+        f"Cost: ${report.cost_usd:.4f}."
+    )
+    if args.assemble and report.merged:
+        run_assemble([str(bundle_dir)])
+
+
 def run_verify(argv: list[str]) -> None:
     """``verify`` subcommand: semantic faithfulness gate (Fase B1). Spends API budget.
 
@@ -1119,6 +1158,7 @@ _SUBCOMMANDS: Final[dict[str, Callable[[list[str]], None]]] = {
     "assemble": run_assemble,
     "build": run_build,
     "cover": run_cover,
+    "dedupe": run_dedupe,
     "verify": run_verify,
     "eval": run_eval,
 }

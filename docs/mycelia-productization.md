@@ -177,6 +177,14 @@ D2 embedding fork.
   --append` adds a book to a bundle (`sources.json`, source-tagged chunks, global chunk ids); the
   runner/cover loops pick each chunk's source. Unit-proven: one concept in two books → one note,
   two cross-book citations.
+  **Status (D2 shipped & validated)**: `dedupe.py` + `book-extract dedupe` — token-overlap prefilter
+  proposes candidate same-concept pairs (zero deps), `claude -p` arbitrates each conservatively, and a
+  confirmed merge renames the loser slug to the winner's (old slug kept as alias) in the chunk JSON so
+  the existing assembler folds them on re-`assemble` (no engine change). Real run on the 89-note
+  vault: 2 candidate pairs surfaced (`bch-codes`~`reed-solomon-codes`, `error-detection`~
+  `error-correction` — related but distinct), the arbiter correctly **merged 0** (no false merges) at
+  $0.19. The positive-merge path is unit-tested. Cross-lingual-pure synonymy remains out of scope.
+  **Fase D complete.**
 - **Fase E — upstream extraction quality** *(gap: noisy source)*. Docling/technical mode for
   math/tables/figures; cleaner raw; surfaced extraction confidence. *Success*: a formula/table-heavy
   chunk yields fewer grounding failures than pdftotext, measured by A.
