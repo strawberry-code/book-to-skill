@@ -39,6 +39,7 @@ from bookextract.okf_lint import DEFAULT_MIN_COVERAGE, format_report, lint_bundl
 from bookextract.pageoffset import detect_page_offset, remap_citations
 from bookextract.pipeline import Attempt, ChainResult, run_chain
 from bookextract.progress import page_progress
+from bookextract.qa import format_qa, verify_bundle
 from bookextract.runner import BuildConfig, CliResult, build_bundle, invoke_claude
 from bookextract.structure import detect_structure
 from bookextract.types import ExtractionMode, Figure, set_debug
@@ -846,6 +847,42 @@ def run_build(argv: list[str]) -> None:
         run_assemble([str(cfg.bundle)])
 
 
+def run_verify(argv: list[str]) -> None:
+    """``verify`` subcommand: semantic faithfulness gate (Fase B1). Spends API budget.
+
+    For each atomic note, an independent Opus call judges whether the body is supported
+    by its cited quotes. Notes are batched per call to amortize overhead. Exits non-zero
+    if any note is ``unsupported`` or faithfulness falls below ``--min-faithful``.
+    """
+    parser = argparse.ArgumentParser(
+        prog="extract.py verify",
+        description="Judge each note's body against its cited quotes via claude -p (spends).",
+    )
+    parser.add_argument("bundle_dir", help="path to the built OKF bundle")
+    parser.add_argument("--model", default="opus", help="model alias/name (default: opus)")
+    parser.add_argument("--batch-size", type=int, default=10, help="notes judged per call")
+    parser.add_argument("--max-notes", type=int, default=None, help="verify at most N notes")
+    parser.add_argument("--timeout", type=int, default=600, help="per-call claude -p timeout (s)")
+    parser.add_argument(
+        "--min-faithful", type=float, default=0.0, metavar="FRACTION",
+        help="exit non-zero below this supported-fraction (default 0: report-only)",
+    )
+    args = parser.parse_args(argv)
+
+    bundle_dir = Path(args.bundle_dir)
+    if not bundle_dir.is_dir():
+        _die(f"Not a directory: {bundle_dir}")
+
+    def invoke(prompt: str) -> CliResult:
+        return invoke_claude(prompt, args.model, timeout=args.timeout)
+
+    report = verify_bundle(
+        bundle_dir, invoke, batch_size=args.batch_size, max_notes=args.max_notes
+    )
+    print(format_qa(report))
+    sys.exit(0 if report.ok(args.min_faithful) else 1)
+
+
 def run_eval(argv: list[str]) -> None:
     """``eval`` subcommand: score a built bundle against a gold standard.
 
@@ -1018,6 +1055,7 @@ _SUBCOMMANDS: Final[dict[str, Callable[[list[str]], None]]] = {
     "build-plan": run_build_plan,
     "assemble": run_assemble,
     "build": run_build,
+    "verify": run_verify,
     "eval": run_eval,
 }
 

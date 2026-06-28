@@ -141,7 +141,12 @@ D2 embedding fork.
   chunk whose chapter == `citation.chapter`). *B1 semantic QA* (LLM judges body⊨cited-quote;
   unsupported = gate; reuses C's runner). *B3 coverage critic* (LLM lists concepts present per chunk;
   diff vs emitted → loop-until-dry). *Success*: injected wrong-chapter/unfaithful notes are caught;
-  recall improves on the gold.
+  recall improves on the gold. **Status (B1 shipped & validated)**: `qa.py` + `book-extract verify`
+  judges each note's body against its cited quotes, batched per call. On 12 real headless notes:
+  faithfulness 75% (9 supported, 3 overreach, 0 unsupported) at $0.55 (~$0.046/note batched,
+  ≈$2.3/51-note book). The 3 overreach findings were genuine semantic defects (a misstated coding
+  theorem, an invented application list, a definition conflated with the decision region) that lint
+  and grounding cannot see. B2 (low value, heuristic chapter map) and B3 deferred.
 - **Fase C — headless orchestration** *(gap #1, now in-scope: Opus headless confirmed)*. *C1 runner*
   drives `claude -p --model opus --output-format json` per pending chunk → `validate_note` → journal
   (resume/idempotent); in-session path stays as fallback on the same Note-JSON contract. *C2*
