@@ -40,7 +40,7 @@ def _note(slug: str, *, quote: str) -> Note:
 
 
 def _build(tmp_path: Path) -> Path:
-    inputs = AssembleInputs(
+    inputs = AssembleInputs.single(
         notes=[
             _note("alpha", quote="alpha concept text"),
             _note("beta", quote="beta concept text"),

@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Final, cast
 
 from bookextract.notes import NoteValidationError, validate_note
-from bookextract.runner import Invoke, extract_notes
+from bookextract.runner import Invoke, extract_notes, load_raw_by_source
 
 _DEFAULT_ROUNDS: Final[int] = 3
 
@@ -108,10 +108,9 @@ def cover_bundle(
 ) -> CoverReport:
     """Run the coverage critic over every already-built chunk, appending missed notes."""
     myc = bundle_dir / ".mycelia"
-    source = json.loads((myc / "source.json").read_text(encoding="utf-8"))
     plan = json.loads((myc / "plan.json").read_text(encoding="utf-8"))
-    raw = (bundle_dir / source["raw_rel"]).read_text(encoding="utf-8", errors="replace")
-    lines = raw.split("\n")
+    raw_by_source = load_raw_by_source(bundle_dir)
+    default_slug = next(iter(raw_by_source), "")
 
     built = [c for c in plan if (myc / "chunks" / f"{c['id']}.json").is_file()]
     if max_chunks is not None:
@@ -122,7 +121,9 @@ def cover_bundle(
         path = myc / "chunks" / f"{chunk['id']}.json"
         existing = json.loads(path.read_text(encoding="utf-8")).get("notes", [])
         known = {n.get("slug") for n in existing}
-        task = CoverTask(_chunk_text(lines, chunk), source["slug"], chunk.get("chapter"))
+        slug = str(chunk.get("source") or default_slug)
+        text = _chunk_text(raw_by_source.get(slug, []), chunk)
+        task = CoverTask(text, slug, chunk.get("chapter"))
         new, cost = cover_chunk(task, known, invoke, max_rounds)
         report.chunks += 1
         report.cost_usd += cost

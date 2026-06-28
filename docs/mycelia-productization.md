@@ -166,10 +166,17 @@ D2 embedding fork.
   more exhaustive, not just unattended. C2 (prefix-cache optimization, concurrency, budget cap) is
   the remaining polish.
 - **Fase D — deep reconciliation & multi-book** *(gaps: fragmentation, single-book)*. *D1*
-  multi-source assemble (cross-book citations on shared canonical notes). *D2* embedding
-  reconciliation for semantic/cross-lingual synonyms — **deps fork** (local sentence-transformers /
-  API / extended-deterministic), with a no-false-merge guard. *Success*: a shared concept accrues
-  citations from two books; a "germany/deutschland"-class fold with zero false-merge regression.
+  multi-source assemble (cross-book citations on shared canonical notes). *D2* semantic
+  reconciliation — **chosen engine: no-deps token-overlap prefilter + `claude -p` arbitration**
+  (reuses the runner; cross-lingual-pure is out of scope, would need embeddings), with a
+  no-false-merge guard. *Success*: a shared concept accrues citations from two books; a same-concept
+  pair with no shared slug folds with zero false-merge regression.
+  **Status (D1 shipped)**: `assemble` now takes one or more `SourceDoc`s; each citation grounds
+  against its own book's raw, notes sharing a slug across books merge into one canonical note that
+  accrues a citation per source, and each book gets its own `references/` note + MOC. `build-plan
+  --append` adds a book to a bundle (`sources.json`, source-tagged chunks, global chunk ids); the
+  runner/cover loops pick each chunk's source. Unit-proven: one concept in two books → one note,
+  two cross-book citations.
 - **Fase E — upstream extraction quality** *(gap: noisy source)*. Docling/technical mode for
   math/tables/figures; cleaner raw; surfaced extraction confidence. *Success*: a formula/table-heavy
   chunk yields fewer grounding failures than pdftotext, measured by A.

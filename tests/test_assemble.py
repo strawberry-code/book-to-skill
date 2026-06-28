@@ -8,7 +8,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
-from bookextract.assemble import AssembleInputs, Source, assemble  # noqa: E402
+from bookextract.assemble import AssembleInputs, Source, SourceDoc, assemble  # noqa: E402
 from bookextract.notes import Citation, Note  # noqa: E402
 
 _RAW = "alpha concept text appears here\nbeta concept text appears here\n"
@@ -41,7 +41,7 @@ def _note(slug: str, *, related: tuple[str, ...], quote: str, body: str = "Body.
 
 
 def _assemble(notes: list[Note], tmp_path: Path):
-    inputs = AssembleInputs(
+    inputs = AssembleInputs.single(
         notes=notes, source=_SOURCE, raw_text=_RAW, timestamp="2026-06-28T00:00:00Z"
     )
     return assemble(inputs, tmp_path)
@@ -109,7 +109,7 @@ def test_acronym_folds_into_expansion(tmp_path: Path):
         citations=(Citation(1, "the bsc model is described", "src"),),
     )
     # acronym occurrence FIRST: the expansion's identity must still win.
-    inputs = AssembleInputs(
+    inputs = AssembleInputs.single(
         notes=[acronym, expansion], source=_SOURCE, raw_text=raw, timestamp="2026-06-28T00:00:00Z"
     )
     report = assemble(inputs, tmp_path)
@@ -127,7 +127,7 @@ def test_plural_folds_into_singular(tmp_path: Path):
     raw = "an encoder maps messages\nseveral encoders are compared\n"
     singular = _note("encoder", related=(), quote="an encoder maps messages")
     plural = _note("encoders", related=(), quote="several encoders are compared")
-    inputs = AssembleInputs(
+    inputs = AssembleInputs.single(
         notes=[singular, plural], source=_SOURCE, raw_text=raw, timestamp="2026-06-28T00:00:00Z"
     )
     report = assemble(inputs, tmp_path)
@@ -149,6 +149,47 @@ def test_ungroundable_citation_is_dropped_not_fatal(tmp_path: Path):
     assert manifest["dropped"]["notes"] == 1
     log = (tmp_path / "log.md").read_text(encoding="utf-8")
     assert "uncited note" in log  # the drop is reported, not silent
+
+
+def _src(slug: str) -> Source:
+    return Source(
+        slug=slug, title=slug.upper(), authors=("Auth",), extraction_method="plain-text",
+        source_sha256="h", source_filename=f"{slug}.md", raw_rel=f"raw/{slug}/full_text.txt",
+        page_offset=None,
+    )
+
+
+def test_same_concept_across_books_merges_with_cross_book_citations(tmp_path: Path):
+    # The crux of multi-book: one concept seen in two books → one canonical note,
+    # accruing a citation from each source, and a per-book reference + MOC.
+    doc_a = SourceDoc(_src("book-a"), "alpha appears in book a\n")
+    doc_b = SourceDoc(_src("book-b"), "alpha appears in book b\n")
+    note_a = Note(
+        type="Concept", slug="alpha", title="Alpha", description="The alpha.",
+        tags=(), aliases=(), confidence="high", status="established",
+        body="From book A.", related=(),
+        citations=(Citation(1, "alpha appears in book a", "book-a"),),
+    )
+    note_b = Note(
+        type="Concept", slug="alpha", title="Alpha", description="The alpha.",
+        tags=(), aliases=(), confidence="high", status="established",
+        body="From book B.", related=(),
+        citations=(Citation(1, "alpha appears in book b", "book-b"),),
+    )
+    inputs = AssembleInputs(
+        notes=[note_a, note_b], sources=(doc_a, doc_b), timestamp="2026-06-29T00:00:00Z"
+    )
+    report = assemble(inputs, tmp_path)
+    assert report.ok, report.errors
+    assert report.atomic_notes == 1  # merged across books, not duplicated
+    note = (tmp_path / "concepts" / "alpha.md").read_text(encoding="utf-8")
+    assert "/references/book-a.md" in note and "/references/book-b.md" in note  # both cited
+    assert (tmp_path / "references" / "book-a.md").is_file()
+    assert (tmp_path / "references" / "book-b.md").is_file()
+    assert (tmp_path / "moc" / "book-a.md").is_file()
+    assert (tmp_path / "moc" / "book-b.md").is_file()
+    root = (tmp_path / "index.md").read_text(encoding="utf-8")
+    assert "/references/book-a.md" in root and "/references/book-b.md" in root
 
 
 def test_uncited_note_is_dropped_and_reported(tmp_path: Path):

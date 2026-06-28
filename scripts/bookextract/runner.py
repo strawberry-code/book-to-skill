@@ -171,15 +171,34 @@ def _chunk_text(lines: list[str], chunk: dict[str, object]) -> str:
     return "\n".join(lines[start:end])
 
 
+def load_raw_by_source(bundle_dir: Path) -> dict[str, list[str]]:
+    """Map each book's slug to its raw text split into lines (multi- or single-book)."""
+    myc = bundle_dir / ".mycelia"
+    multi = myc / "sources.json"
+    if multi.is_file():
+        entries = json.loads(multi.read_text(encoding="utf-8"))
+    else:
+        entries = [json.loads((myc / "source.json").read_text(encoding="utf-8"))]
+    out: dict[str, list[str]] = {}
+    for entry in entries:
+        raw = (bundle_dir / entry["raw_rel"]).read_text(encoding="utf-8", errors="replace")
+        out[entry["slug"]] = raw.split("\n")
+    return out
+
+
+def _chunk_source(chunk: dict[str, object], default_slug: str) -> str:
+    """The book slug a chunk belongs to (``source`` field, else the sole/first book)."""
+    return cast(str, chunk.get("source") or default_slug)
+
+
 def build_bundle(cfg: BuildConfig, invoke: Invoke) -> BuildSummary:
     """Run ``invoke`` over every pending chunk, writing notes + advancing the journal."""
     myc = cfg.bundle / ".mycelia"
-    source = json.loads((myc / "source.json").read_text(encoding="utf-8"))
     plan = json.loads((myc / "plan.json").read_text(encoding="utf-8"))
     journal_path = myc / "journal.json"
     done = set(json.loads(journal_path.read_text(encoding="utf-8")).get("done", []))
-    raw = (cfg.bundle / source["raw_rel"]).read_text(encoding="utf-8", errors="replace")
-    lines = raw.split("\n")
+    raw_by_source = load_raw_by_source(cfg.bundle)
+    default_slug = next(iter(raw_by_source), "")
 
     pending = [c for c in plan if c["id"] not in done]
     if cfg.max_chunks is not None:
@@ -187,9 +206,11 @@ def build_bundle(cfg: BuildConfig, invoke: Invoke) -> BuildSummary:
 
     summary = BuildSummary()
     for chunk in pending:
+        slug = _chunk_source(chunk, default_slug)
+        lines = raw_by_source.get(slug, [])
         try:
             items, cost = run_chunk(
-                _chunk_text(lines, chunk), source["slug"], chunk.get("chapter"), invoke
+                _chunk_text(lines, chunk), slug, chunk.get("chapter"), invoke
             )
         except (RunnerError, ValueError, json.JSONDecodeError) as exc:
             summary.failed.append((cast(int, chunk["id"]), str(exc)))

@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Final, NoReturn, cast
 
 from bookextract import __version__, deps
-from bookextract.assemble import AssembleInputs, Source, assemble
+from bookextract.assemble import AssembleInputs, Source, SourceDoc, assemble
 from bookextract.batch import Match, match_sources
 from bookextract.chunking import chunk_sections
 from bookextract.cover import cover_bundle
@@ -976,6 +976,10 @@ def run_build_plan(argv: list[str]) -> None:
     parser.add_argument("--out", required=True, help="bundle directory to initialise")
     parser.add_argument("--slug", help="source slug (default: derived from the filename)")
     parser.add_argument("--target-words", type=int, default=8000, metavar="N")
+    parser.add_argument(
+        "--append", action="store_true",
+        help="add this book to an existing bundle (multi-book) instead of starting fresh",
+    )
     args = parser.parse_args(argv)
 
     raw_dir = Path(args.raw_dir)
@@ -995,9 +999,13 @@ def run_build_plan(argv: list[str]) -> None:
     shutil.copy2(meta_path, raw_dest / "metadata.json")
 
     chunks = chunk_sections(text, target_words=args.target_words)
-    plan = [
+    append = args.append and (myc / "plan.json").is_file()
+    existing_plan = json.loads((myc / "plan.json").read_text(encoding="utf-8")) if append else []
+    id_offset = max((c["id"] for c in existing_plan), default=-1) + 1
+    new_chunks = [
         {
-            "id": chunk.index,
+            "id": id_offset + chunk.index,
+            "source": slug,
             "label": chunk.label,
             "chapter": chunk.chapter,
             "start_line": chunk.start_line,
@@ -1006,6 +1014,7 @@ def run_build_plan(argv: list[str]) -> None:
         }
         for chunk in chunks
     ]
+    plan = existing_plan + new_chunks
     source = {
         "slug": slug,
         "title": Path(meta.get("filename", slug)).stem,
@@ -1016,31 +1025,48 @@ def run_build_plan(argv: list[str]) -> None:
         "raw_rel": f"raw/{slug}/full_text.txt",
         "page_offset": meta.get("page_offset"),
     }
+    sources_path = myc / "sources.json"
+    existing_sources = (
+        json.loads(sources_path.read_text(encoding="utf-8"))
+        if append and sources_path.is_file()
+        else []
+    )
+    sources = [s for s in existing_sources if s["slug"] != slug] + [source]
     (myc / "plan.json").write_text(json.dumps(plan, indent=2) + "\n", encoding="utf-8")
-    (myc / "journal.json").write_text(json.dumps({"done": []}, indent=2) + "\n", encoding="utf-8")
-    (myc / "source.json").write_text(json.dumps(source, indent=2) + "\n", encoding="utf-8")
-    print(f"Plan: {len(chunks)} chunk(s) -> {myc / 'plan.json'}")
+    sources_path.write_text(json.dumps(sources, indent=2) + "\n", encoding="utf-8")
+    (myc / "source.json").write_text(json.dumps(sources[0], indent=2) + "\n", encoding="utf-8")
+    if not append:
+        (myc / "journal.json").write_text(json.dumps({"done": []}, indent=2) + "\n", "utf-8")
+    print(f"Plan: {len(new_chunks)} new chunk(s), {len(plan)} total -> {myc / 'plan.json'}")
     print(
-        f"Next: fill {myc / 'source.json'} (title/authors), emit {myc / 'chunks'}/<id>.json "
-        f"per chunk, then: book-extract assemble {bundle}"
+        f"Next: fill title/authors in {sources_path}, build the {len(plan)} chunk(s), "
+        f"then: book-extract assemble {bundle}"
     )
 
 
-def _load_source(path: Path) -> Source:
-    """Load the ``source.json`` written by ``build-plan`` into a :class:`Source`."""
-    if not path.is_file():
-        _die(f"missing {path} (run build-plan first)")
-    data = json.loads(path.read_text(encoding="utf-8"))
+def _source_from(data: dict[str, object]) -> Source:
+    """Build a :class:`Source` from a source.json / sources.json entry."""
     return Source(
-        slug=data["slug"],
-        title=data["title"],
-        authors=tuple(data.get("authors", [])),
-        extraction_method=data.get("extraction_method", "unknown"),
-        source_sha256=data.get("source_sha256", ""),
-        source_filename=data.get("source_filename", ""),
-        raw_rel=data["raw_rel"],
-        page_offset=data.get("page_offset"),
+        slug=cast(str, data["slug"]),
+        title=cast(str, data["title"]),
+        authors=tuple(cast("list[str]", data.get("authors", []))),
+        extraction_method=cast(str, data.get("extraction_method", "unknown")),
+        source_sha256=cast(str, data.get("source_sha256", "")),
+        source_filename=cast(str, data.get("source_filename", "")),
+        raw_rel=cast(str, data["raw_rel"]),
+        page_offset=cast("int | None", data.get("page_offset")),
     )
+
+
+def _load_sources(myc: Path) -> list[Source]:
+    """Load every book of a bundle: ``sources.json`` (multi-book) else ``source.json``."""
+    multi = myc / "sources.json"
+    if multi.is_file():
+        return [_source_from(d) for d in json.loads(multi.read_text(encoding="utf-8"))]
+    single = myc / "source.json"
+    if not single.is_file():
+        _die(f"missing {single} (run build-plan first)")
+    return [_source_from(json.loads(single.read_text(encoding="utf-8")))]
 
 
 def _load_notes(chunks_dir: Path) -> list[Note]:
@@ -1065,19 +1091,18 @@ def run_assemble(argv: list[str]) -> None:
 
     bundle = Path(args.bundle_dir)
     myc = bundle / ".mycelia"
-    source = _load_source(myc / "source.json")
-    raw_path = bundle / source.raw_rel
-    if not raw_path.is_file():
-        _die(f"missing raw text at {raw_path}")
-    raw_text = raw_path.read_text(encoding="utf-8", errors="replace")
+    docs: list[SourceDoc] = []
+    for source in _load_sources(myc):
+        raw_path = bundle / source.raw_rel
+        if not raw_path.is_file():
+            _die(f"missing raw text at {raw_path}")
+        docs.append(SourceDoc(source, raw_path.read_text(encoding="utf-8", errors="replace")))
     timestamp = args.timestamp or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     try:
         notes = _load_notes(myc / "chunks")
         if not notes:
             _die(f"no notes found in {myc / 'chunks'}")
-        inputs = AssembleInputs(
-            notes=notes, source=source, raw_text=raw_text, timestamp=timestamp
-        )
+        inputs = AssembleInputs(notes=notes, sources=tuple(docs), timestamp=timestamp)
         report = assemble(inputs, bundle)
     except NoteValidationError as exc:
         _die(str(exc), exc.hint)

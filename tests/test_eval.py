@@ -51,7 +51,7 @@ def _note(
 
 
 def _build(notes: list[Note], tmp_path: Path) -> list[BundleNote]:
-    inputs = AssembleInputs(
+    inputs = AssembleInputs.single(
         notes=notes, source=_SOURCE, raw_text=_RAW, timestamp="2026-06-28T00:00:00Z"
     )
     report = assemble(inputs, tmp_path)

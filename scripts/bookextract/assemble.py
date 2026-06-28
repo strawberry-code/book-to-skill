@@ -57,13 +57,27 @@ class Source:
 
 
 @dataclass(frozen=True)
-class AssembleInputs:
-    """Everything the assembler needs for one book (grouped to keep arity small)."""
+class SourceDoc:
+    """One book's provenance paired with its immutable raw text (for grounding)."""
 
-    notes: list[Note]
     source: Source
     raw_text: str
+
+
+@dataclass(frozen=True)
+class AssembleInputs:
+    """Everything the assembler needs to build one bundle from one or more books."""
+
+    notes: list[Note]
+    sources: tuple[SourceDoc, ...]
     timestamp: str
+
+    @classmethod
+    def single(
+        cls, notes: list[Note], source: Source, raw_text: str, timestamp: str
+    ) -> AssembleInputs:
+        """Convenience constructor for the common single-book case."""
+        return cls(notes=notes, sources=(SourceDoc(source, raw_text),), timestamp=timestamp)
 
 
 @dataclass
@@ -115,18 +129,23 @@ def _norm_key(value: str) -> str:
     return value.strip().casefold()
 
 
-def _ground_all(note: Note, source: Source, raw: str) -> tuple[list[GroundedCitation], int]:
-    """Ground a note's citations, skipping (and counting) any that don't verify.
+def _ground_all(note: Note, docs: dict[str, SourceDoc]) -> tuple[list[GroundedCitation], int]:
+    """Ground a note's citations against each one's source, skipping/counting failures.
 
-    Autonomous generation occasionally emits a near-verbatim quote that fails the
-    exact grounding check; one such citation must not abort the whole bundle, so it
-    is dropped and reported rather than raised.
+    Each citation names its source slug, so cross-book notes ground every quote
+    against the right book's raw text. A citation whose source is unknown, or whose
+    near-verbatim quote fails the exact check, is dropped and reported rather than
+    raised — one bad citation must not abort the whole bundle.
     """
     grounded: list[GroundedCitation] = []
     dropped = 0
     for citation in note.citations:
+        doc = docs.get(citation.source)
+        if doc is None:
+            dropped += 1
+            continue
         try:
-            grounded.append(ground_citation(citation, raw, source.page_offset))
+            grounded.append(ground_citation(citation, doc.raw_text, doc.source.page_offset))
         except NoteValidationError:
             dropped += 1
     return grounded, dropped
@@ -174,20 +193,23 @@ def _merge(dst: _Merged, note: Note, grounded: list[GroundedCitation], *, primar
     dst.merged = True
 
 
-def _collect(notes: list[Note], source: Source, raw: str) -> tuple[dict[str, _Merged], _DropStats]:
+def _collect(
+    notes: list[Note], docs: dict[str, SourceDoc]
+) -> tuple[dict[str, _Merged], _DropStats]:
     """Deduplicate notes by canonical slug, grounding each citation as it folds in.
 
     Beyond exact-slug dedup, :func:`reconcile_slugs` folds acronym/plural variants
     into one canonical note; the folded slug is recorded as an alias so ``related``
-    links resolve through the existing alias index. Ungroundable citations are
-    skipped, and a note left with no groundable citation is dropped (it could not
-    satisfy the coverage gate anyway) — both are counted in the returned stats.
+    links resolve through the existing alias index. Notes sharing a slug across books
+    merge into one canonical note that accrues citations from every source. Ungroundable
+    citations are skipped, and a note left with no groundable citation is dropped (it
+    could not satisfy the coverage gate anyway) — both are counted in the returned stats.
     """
     remap = reconcile_slugs({n.slug for n in notes})
     canon: dict[str, _Merged] = {}
     stats = _DropStats()
     for note in notes:
-        grounded, dropped = _ground_all(note, source, raw)
+        grounded, dropped = _ground_all(note, docs)
         stats.citations += dropped
         if not grounded:
             stats.notes += 1
@@ -319,14 +341,21 @@ def _section_index(bundle: Path, directory: str, canon: dict[str, _Merged], ctx:
     _write(bundle / directory / "index.md", "\n".join(lines) + "\n")
 
 
-def _write_indexes(bundle: Path, canon: dict[str, _Merged], ctx: _Ctx, source: Source) -> None:
+def _notes_for_source(canon: dict[str, _Merged], slug: str) -> dict[str, _Merged]:
+    """The subset of notes carrying at least one citation from ``slug``'s book."""
+    return {s: m for s, m in canon.items() if any(c.source == slug for c in m.citations)}
+
+
+def _write_indexes(
+    bundle: Path, canon: dict[str, _Merged], ctx: _Ctx, sources: tuple[Source, ...]
+) -> None:
     """Write per-section, references, and moc ``index.md`` files (no frontmatter)."""
     for directory in _SECTION_ORDER:
         _section_index(bundle, directory, canon, ctx)
-    ref_line = f"- [{source.title}](/references/{source.slug}.md) — {', '.join(source.authors)}"
-    _write(bundle / "references" / "index.md", f"# References\n\n{ref_line}\n")
-    moc_line = f"- [{source.title}](/moc/{source.slug}.md) — every note sourced from the book"
-    _write(bundle / "moc" / "index.md", f"# Maps of content\n\n{moc_line}\n")
+    refs = [f"- [{s.title}](/references/{s.slug}.md) — {', '.join(s.authors)}" for s in sources]
+    _write(bundle / "references" / "index.md", "# References\n\n" + "\n".join(refs) + "\n")
+    mocs = [f"- [{s.title}](/moc/{s.slug}.md) — every note sourced from the book" for s in sources]
+    _write(bundle / "moc" / "index.md", "# Maps of content\n\n" + "\n".join(mocs) + "\n")
 
 
 def _write_source(bundle: Path, source: Source, ctx: _Ctx) -> None:
@@ -357,7 +386,8 @@ def _write_source(bundle: Path, source: Source, ctx: _Ctx) -> None:
 
 
 def _write_moc(bundle: Path, source: Source, canon: dict[str, _Merged], ctx: _Ctx) -> None:
-    """Write the per-book map-of-content grouping notes by type."""
+    """Write a book's map-of-content over the notes that cite it, grouped by type."""
+    own = _notes_for_source(canon, source.slug)
     parts = [
         "---",
         "type: MOC",
@@ -371,7 +401,7 @@ def _write_moc(bundle: Path, source: Source, canon: dict[str, _Merged], ctx: _Ct
         f"# {source.title} — Map of Content",
     ]
     for directory in _SECTION_ORDER:
-        slugs = sorted(s for s, m in canon.items() if _TYPE_DIR[m.type] == directory)
+        slugs = sorted(s for s, m in own.items() if _TYPE_DIR[m.type] == directory)
         if not slugs:
             continue
         parts += ["", f"## {directory.replace('-', ' ').title()}"]
@@ -379,14 +409,21 @@ def _write_moc(bundle: Path, source: Source, canon: dict[str, _Merged], ctx: _Ct
     _write(bundle / "moc" / f"{source.slug}.md", "\n".join(parts) + "\n")
 
 
-def _write_root_index(bundle: Path, source: Source, canon: dict[str, _Merged]) -> None:
+def _vault_title(sources: tuple[Source, ...]) -> str:
+    """Bundle title: the book's title for one source, else a corpus label."""
+    if len(sources) == 1:
+        return f"{sources[0].title} — Mycelia Vault"
+    return f"Mycelia Vault — {len(sources)} sources"
+
+
+def _write_root_index(bundle: Path, sources: tuple[Source, ...], canon: dict[str, _Merged]) -> None:
     """Write the bundle-root ``index.md`` (the only index that may carry okf_version)."""
     lines = [
         "---",
         f'okf_version: "{_OKF_VERSION}"',
         "---",
         "",
-        f"# {source.title} — Mycelia Vault",
+        f"# {_vault_title(sources)}",
         "",
         "An atomic, interlinked OKF knowledge vault generated by Mycelia.",
         "",
@@ -395,21 +432,17 @@ def _write_root_index(bundle: Path, source: Source, canon: dict[str, _Merged]) -
     for directory in _SECTION_ORDER:
         if any(_TYPE_DIR[m.type] == directory for m in canon.values()):
             lines.append(f"- [{directory.replace('-', ' ').title()}](/{directory}/index.md)")
-    lines += [
-        "- [References](/references/index.md)",
-        "- [Maps of content](/moc/index.md)",
-        "",
-        "## Sources",
-        f"- [{source.title}](/references/{source.slug}.md) — {', '.join(source.authors)}",
-    ]
+    lines += ["- [References](/references/index.md)", "- [Maps of content](/moc/index.md)"]
+    lines += ["", "## Sources"]
+    lines += [f"- [{s.title}](/references/{s.slug}.md) — {', '.join(s.authors)}" for s in sources]
     _write(bundle / "index.md", "\n".join(lines) + "\n")
 
 
-def _write_log(
-    bundle: Path, source: Source, canon: dict[str, _Merged], timestamp: str, stats: _DropStats
-) -> None:
+def _write_log(bundle: Path, canon: dict[str, _Merged], ctx: _Ctx, stats: _DropStats) -> None:
     """Write ``log.md`` with a single dated ingest entry (idempotent rebuild)."""
+    sources = tuple(ctx.sources.values())
     merged = sum(1 for m in canon.values() if m.merged)
+    label = f'"{sources[0].title}"' if len(sources) == 1 else f"{len(sources)} sources"
     dropped = ""
     if stats.citations or stats.notes:
         dropped = (
@@ -418,15 +451,14 @@ def _write_log(
         )
     entry = (
         f"- **Create** Assembled {len(canon)} atomic notes from "
-        f'"{source.title}" ({merged} merged across chunks).{dropped}'
+        f"{label} ({merged} merged across sources/chunks).{dropped}"
     )
-    _write(bundle / "log.md", f"# Log\n\n## {timestamp[:10]}\n{entry}\n")
+    _write(bundle / "log.md", f"# Log\n\n## {ctx.timestamp[:10]}\n{entry}\n")
 
 
-def _write_manifest(
-    bundle: Path, source: Source, canon: dict[str, _Merged], timestamp: str, stats: _DropStats
-) -> None:
+def _write_manifest(bundle: Path, canon: dict[str, _Merged], ctx: _Ctx, stats: _DropStats) -> None:
     """Write ``.mycelia.json`` provenance + per-section note counts."""
+    day = ctx.timestamp[:10]
     counts = {
         directory: sum(1 for m in canon.values() if _TYPE_DIR[m.type] == directory)
         for directory in _SECTION_ORDER
@@ -434,16 +466,17 @@ def _write_manifest(
     manifest = {
         "generator_version": __version__,
         "okf_version": _OKF_VERSION,
-        "updated": timestamp[:10],
+        "updated": day,
         "sources": [
             {
-                "slug": source.slug,
-                "source_filename": source.source_filename,
-                "extraction_method": source.extraction_method,
-                "source_sha256": source.source_sha256,
-                "page_offset": source.page_offset,
-                "ingested": timestamp[:10],
+                "slug": s.slug,
+                "source_filename": s.source_filename,
+                "extraction_method": s.extraction_method,
+                "source_sha256": s.source_sha256,
+                "page_offset": s.page_offset,
+                "ingested": day,
             }
+            for s in ctx.sources.values()
         ],
         "note_counts": counts,
         "dropped": {"citations": stats.citations, "notes": stats.notes},
@@ -452,17 +485,20 @@ def _write_manifest(
 
 
 def assemble(inputs: AssembleInputs, bundle_dir: Path) -> LintReport:
-    """Assemble validated notes into an OKF bundle and return the lint gate report."""
-    source, timestamp = inputs.source, inputs.timestamp
-    canon, stats = _collect(inputs.notes, source, inputs.raw_text)
+    """Assemble validated notes (from one or more books) into an OKF bundle; return the gate."""
+    timestamp = inputs.timestamp
+    docs = {doc.source.slug: doc for doc in inputs.sources}
+    sources = tuple(doc.source for doc in inputs.sources)
+    canon, stats = _collect(inputs.notes, docs)
     _resolve_related(canon, _alias_index(canon))
     slug_index = {s: (_TYPE_DIR[m.type], m.title, m.description) for s, m in canon.items()}
-    ctx = _Ctx(timestamp=timestamp, sources={source.slug: source}, slug_index=slug_index)
+    ctx = _Ctx(timestamp=timestamp, sources={s.slug: s for s in sources}, slug_index=slug_index)
     _write_notes(bundle_dir, canon, ctx)
-    _write_indexes(bundle_dir, canon, ctx, source)
-    _write_source(bundle_dir, source, ctx)
-    _write_moc(bundle_dir, source, canon, ctx)
-    _write_root_index(bundle_dir, source, canon)
-    _write_log(bundle_dir, source, canon, timestamp, stats)
-    _write_manifest(bundle_dir, source, canon, timestamp, stats)
+    _write_indexes(bundle_dir, canon, ctx, sources)
+    for source in sources:
+        _write_source(bundle_dir, source, ctx)
+        _write_moc(bundle_dir, source, canon, ctx)
+    _write_root_index(bundle_dir, sources, canon)
+    _write_log(bundle_dir, canon, ctx, stats)
+    _write_manifest(bundle_dir, canon, ctx, stats)
     return lint_bundle(bundle_dir, strict_links=True)
