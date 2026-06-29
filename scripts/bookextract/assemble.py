@@ -19,7 +19,14 @@ from pathlib import Path
 from typing import Final
 
 from bookextract import __version__
-from bookextract.notes import GroundedCitation, Note, NoteValidationError, ground_citation
+from bookextract.notes import (
+    GroundedCitation,
+    NormalizedSource,
+    Note,
+    NoteValidationError,
+    ground_with_source,
+    normalized_source,
+)
 from bookextract.okf_lint import LintReport, lint_bundle
 from bookextract.reconcile import reconcile_slugs
 
@@ -129,23 +136,25 @@ def _norm_key(value: str) -> str:
     return value.strip().casefold()
 
 
-def _ground_all(note: Note, docs: dict[str, SourceDoc]) -> tuple[list[GroundedCitation], int]:
-    """Ground a note's citations against each one's source, skipping/counting failures.
+def _ground_all(
+    note: Note, docs: dict[str, SourceDoc], norms: dict[str, NormalizedSource]
+) -> tuple[list[GroundedCitation], int]:
+    """Ground a note's citations against each one's (precomputed) source; skip/count failures.
 
-    Each citation names its source slug, so cross-book notes ground every quote
-    against the right book's raw text. A citation whose source is unknown, or whose
-    near-verbatim quote fails the exact check, is dropped and reported rather than
-    raised — one bad citation must not abort the whole bundle.
+    Each citation names its source slug, so cross-book notes ground every quote against
+    the right book's raw text — reusing that book's precomputed normalized index. A
+    citation whose source is unknown, or whose near-verbatim quote fails the exact check,
+    is dropped and reported rather than raised — one bad citation must not abort the bundle.
     """
     grounded: list[GroundedCitation] = []
     dropped = 0
     for citation in note.citations:
-        doc = docs.get(citation.source)
-        if doc is None:
+        doc, norm = docs.get(citation.source), norms.get(citation.source)
+        if doc is None or norm is None:
             dropped += 1
             continue
         try:
-            grounded.append(ground_citation(citation, doc.raw_text, doc.source.page_offset))
+            grounded.append(ground_with_source(citation, norm, doc.source.page_offset))
         except NoteValidationError:
             dropped += 1
     return grounded, dropped
@@ -206,10 +215,11 @@ def _collect(
     could not satisfy the coverage gate anyway) — both are counted in the returned stats.
     """
     remap = reconcile_slugs({n.slug for n in notes})
+    norms = {slug: normalized_source(doc.raw_text) for slug, doc in docs.items()}  # once per book
     canon: dict[str, _Merged] = {}
     stats = _DropStats()
     for note in notes:
-        grounded, dropped = _ground_all(note, docs)
+        grounded, dropped = _ground_all(note, docs, norms)
         stats.citations += dropped
         if not grounded:
             stats.notes += 1

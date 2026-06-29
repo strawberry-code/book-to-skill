@@ -173,26 +173,52 @@ def _normalize_with_map(text: str) -> tuple[str, list[int]]:
     return "".join(out), idx
 
 
-def ground_citation(citation: Citation, raw: str, page_offset: int | None) -> GroundedCitation:
-    """Verify a citation's quote against ``raw`` and compute its folio, or raise."""
-    needle = _normalize(citation.quote)
+@dataclass(frozen=True)
+class NormalizedSource:
+    """A source's raw text plus its normalized form and per-char index map.
+
+    Built once per source and reused across all its citations — normalizing a
+    multi-hundred-thousand-word raw on every citation does not scale (it made a
+    1600-note multi-book assemble take many minutes).
+    """
+
+    raw: str
+    norm: str
+    idx: list[int]
+
+
+def normalized_source(raw: str) -> NormalizedSource:
+    """Precompute the normalized form + index map of a raw source for reuse."""
+    norm, idx = _normalize_with_map(raw)
+    return NormalizedSource(raw=raw, norm=norm, idx=idx)
+
+
+def ground_with_source(
+    citation: Citation, source: NormalizedSource, page_offset: int | None
+) -> GroundedCitation:
+    """Verify a citation's quote against a precomputed source and compute its folio, or raise."""
+    needle = _normalize(citation.quote).strip()
     if not needle:
         raise NoteValidationError(f"empty quote ({citation.source} Ch {citation.chapter})")
-    norm_raw, idx = _normalize_with_map(raw)
-    pos = norm_raw.find(needle.strip())
+    pos = source.norm.find(needle)
     if pos < 0:
         preview = citation.quote[:_QUOTE_PREVIEW]
         raise NoteValidationError(
             f'quote not found verbatim in source ({citation.source}): "{preview}…"',
             hint="quote text that exists in raw/ — matching folds ligatures + whitespace",
         )
-    start = idx[pos]
-    end = idx[pos + len(needle.strip()) - 1] + 1
-    verbatim = _WS.sub(" ", raw[start:end]).strip()
-    page = raw[:start].count("\f") + 1 if "\f" in raw else None
+    start = source.idx[pos]
+    end = source.idx[pos + len(needle) - 1] + 1
+    verbatim = _WS.sub(" ", source.raw[start:end]).strip()
+    page = source.raw[:start].count("\f") + 1 if "\f" in source.raw else None
     return GroundedCitation(
         chapter=citation.chapter,
         quote=verbatim,
         source=citation.source,
         folio=folio(page, page_offset) if page is not None else None,
     )
+
+
+def ground_citation(citation: Citation, raw: str, page_offset: int | None) -> GroundedCitation:
+    """Verify a citation against ``raw`` (normalizes on the spot — prefer the cached path)."""
+    return ground_with_source(citation, normalized_source(raw), page_offset)
